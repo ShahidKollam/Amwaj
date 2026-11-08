@@ -17,6 +17,8 @@ async function request(path, options = {}) {
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
     headers,
+    // Avoid browser/HTTP cache 304 with empty body breaking JSON parse
+    cache: 'no-store',
   });
 
   // Session expired — clear storage so next load goes to login
@@ -26,6 +28,7 @@ async function request(path, options = {}) {
   }
 
   const data = await res.json().catch(() => ({}));
+  // res.ok is false for 304; empty body would also fail JSON — treat as error
   if (!res.ok) {
     throw new Error(data.error || `Request failed (${res.status})`);
   }
@@ -51,13 +54,24 @@ export const api = {
   updateProduct: (id, data) =>
     request(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
-  getCustomers: (params = {}) => {
-    // support legacy string search or object params
-    const query = typeof params === 'string' ? { search: params } : params;
+  getCustomers: async (params) => {
+    // Accept string search, object params, or nothing
+    const query =
+      typeof params === 'string'
+        ? { search: params }
+        : params && typeof params === 'object'
+          ? params
+          : {};
     const q = new URLSearchParams(
-      Object.fromEntries(Object.entries(query).filter(([, v]) => v != null && v !== ''))
+      Object.fromEntries(
+        Object.entries(query).filter(([, v]) => v != null && v !== '')
+      )
     ).toString();
-    return request(`/customers${q ? `?${q}` : ''}`);
+    const data = await request(`/customers${q ? `?${q}` : ''}`);
+    // Backend may return { items, total, ... } or a plain array
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.items)) return data.items;
+    return [];
   },
   getCustomer: (id) => request(`/customers/${id}`),
   createCustomer: (data) =>
@@ -65,11 +79,27 @@ export const api = {
 
   completeBill: (data) =>
     request('/billing/complete', { method: 'POST', body: JSON.stringify(data) }),
-  getHistory: (params = {}) => {
+  getHistory: async (params = {}) => {
+    const safe = params && typeof params === 'object' ? params : {};
     const q = new URLSearchParams(
-      Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+      Object.fromEntries(
+        Object.entries(safe).filter(([, v]) => v != null && v !== '')
+      )
     ).toString();
-    return request(`/billing/history${q ? `?${q}` : ''}`);
+    const data = await request(`/billing/history${q ? `?${q}` : ''}`);
+    // Normalize paginated or array response for callers
+    if (Array.isArray(data)) {
+      return { items: data, total: data.length, dayTotalPaise: 0, dayBillCount: data.length };
+    }
+    return {
+      items: Array.isArray(data?.items) ? data.items : [],
+      total: data?.total ?? 0,
+      page: data?.page ?? 1,
+      pageSize: data?.pageSize ?? 20,
+      totalPages: data?.totalPages ?? 1,
+      dayTotalPaise: data?.dayTotalPaise ?? 0,
+      dayBillCount: data?.dayBillCount ?? 0,
+    };
   },
   getInvoice: (id) => request(`/billing/${id}`),
 

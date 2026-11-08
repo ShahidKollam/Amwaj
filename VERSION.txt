@@ -1,19 +1,17 @@
-Amwaj POS v1.3.1 (20261108)
+Amwaj POS v1.3.3 (20261108)
 
-Database: PostgreSQL only (Prisma provider=postgresql)
-Offline: IndexedDB cache on device — NOT SQLite
-
-v1.3.1 fix: restored PostgreSQL as sole server DB (removed accidental SQLite switch).
-
-Also includes:
-- Mobile billing (2-col, expandable panel, Review Bill)
-- 30-day JWT session
-- TanStack Query + Dexie + Zustand caching
+PostgreSQL + IndexedDB offline cache
+- Always-on mobile header + bottom nav (including completed receipt)
+- Premium receipt card under shell chrome
+- Compact icon category chips
+- Dense product cards + bill bar
+- Blank-page safety (array normalization, error boundaries)
+- Rich seed: ~63 products, 12 customers, sample invoices
+- Session persistence 30d JWT
+- TanStack Query + Dexie + Zustand cart
 - Offline bill queue + idempotencyKey
-- History date filter, Settings menu, modals
 
 Setup:
-  backend: set DATABASE_URL (Postgres) in .env
-           npm i && npx prisma generate && npx prisma db push && node prisma/seed.js && npm run dev
+  backend: set DATABASE_URL (Postgres), npm i && npx prisma generate && npx prisma db push && node prisma/seed.js && npm run dev
   frontend: npm i && npm run dev
 Login: admin / amwaj2024

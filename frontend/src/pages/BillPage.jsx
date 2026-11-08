@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search, Plus, Minus, Trash2, UserPlus, ChevronUp, ChevronDown,
-  Check, Banknote, Smartphone, ArrowLeft, X
+  Check, Banknote, Smartphone, ArrowLeft, X,
+  Droplet, Package, SprayCan, Flame, Box
 } from 'lucide-react';
 import { api, formatINR } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +10,14 @@ import Modal, { ConfirmModal } from '../components/Modal';
 import { useProducts, useCategories } from '../hooks/useCatalog';
 import { useCartStore } from '../store/cartStore';
 import { completeBillSafe } from '../lib/billSync';
+
+const CATEGORY_ICON = {
+  Attar: Droplet,
+  Oud: Package,
+  Spray: SprayCan,
+  Bakhoor: Flame,
+  Accessories: Box,
+};
 
 function toPaise(rupees) {
   return Math.round(Number(rupees) * 100);
@@ -45,13 +54,12 @@ export default function BillPage() {
   const categoriesQuery = useCategories();
 
   useEffect(() => {
-    if (productsQuery.data) setProducts(productsQuery.data);
-    if (categoriesQuery.data) {
+    if (Array.isArray(productsQuery.data)) setProducts(productsQuery.data);
+    if (Array.isArray(categoriesQuery.data)) {
       setCategories(categoriesQuery.data);
-      setActiveCategory((prev) => prev || (categoriesQuery.data[0] && categoriesQuery.data[0].id) || null);
+      setActiveCategory((prev) => prev || categoriesQuery.data[0]?.id || null);
     }
     if (!productsQuery.isLoading && !categoriesQuery.isLoading) setLoading(false);
-    // If we have cached data, stop blocking even while background refetch runs
     if (productsQuery.data || categoriesQuery.data) setLoading(false);
   }, [productsQuery.data, categoriesQuery.data, productsQuery.isLoading, categoriesQuery.isLoading]);
 
@@ -98,17 +106,17 @@ export default function BillPage() {
   }, [cart, customer, additional, discount, cash, upi]);
 
   const filteredProducts = useMemo(() => {
-    let list = products;
-    if (activeCategory) list = list.filter((p) => p.categoryId === activeCategory);
+    let list = Array.isArray(products) ? products : [];
+    if (activeCategory) list = list.filter((p) => p?.categoryId === activeCategory);
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter((p) => p.name.toLowerCase().includes(q));
+      list = list.filter((p) => (p?.name || '').toLowerCase().includes(q));
     }
     return list;
   }, [products, activeCategory, search]);
 
   const subtotalPaise = useMemo(
-    () => cart.reduce((s, item) => s + item.lineTotalPaise, 0),
+    () => (Array.isArray(cart) ? cart : []).reduce((s, item) => s + (item?.lineTotalPaise || 0), 0),
     [cart]
   );
   const additionalPaise = toPaise(additional);
@@ -313,53 +321,70 @@ export default function BillPage() {
     setView('browse');
   };
 
-  // ── Completed invoice ──────────────────────────────────
+  // ── Completed invoice (stays inside AppShell header + bottom nav) ──
   if (completedInvoice) {
     return (
-      <div className="min-h-full bg-ivory p-4 pb-24 md:pb-8 max-w-lg mx-auto">
-        <div className="card p-6 text-center">
-          <div className="w-14 h-14 rounded-full bg-emerald/10 flex items-center justify-center mx-auto mb-4">
-            <Check className="text-emerald" size={28} />
+      <div className="bg-ivory px-3 pt-3 pb-6 max-w-lg mx-auto">
+        <div className="rounded-2xl bg-white border border-border shadow-soft overflow-hidden">
+          <div className="bg-emerald px-4 py-3 flex items-center justify-between">
+            <div>
+              <p className="text-white/70 text-[11px] font-medium uppercase tracking-wide">Receipt</p>
+              <p className="text-white font-semibold text-sm">{completedInvoice.invoiceNumber}</p>
+            </div>
+            <div className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center">
+              <Check className="text-gold" size={20} strokeWidth={2.5} />
+            </div>
           </div>
-          <h2 className="text-xl font-bold text-charcoal">Bill Completed</h2>
-          <p className="text-muted mt-1 text-sm">{completedInvoice.invoiceNumber}</p>
-          <p className="text-2xl font-bold text-emerald mt-3">
-            {formatINR(completedInvoice.totalPaise)}
-          </p>
-          {completedInvoice.customer && (
-            <p className="text-sm text-muted mt-2">
-              {completedInvoice.customer.name} · {completedInvoice.customer.mobile}
+          <div className="px-4 pt-4 pb-2 text-center border-b border-border">
+            <p className="text-[11px] text-muted font-medium">Total paid</p>
+            <p className="text-2xl font-bold text-emerald tracking-tight mt-0.5">
+              {formatINR(completedInvoice.totalPaise)}
             </p>
-          )}
-          <div className="mt-5 space-y-2 text-left text-sm border-t border-border pt-4">
-            {completedInvoice.items.map((it) => (
-              <div key={it.id} className="flex justify-between gap-2">
-                <span className="truncate">
+            {completedInvoice.customer && (
+              <p className="text-xs text-muted mt-1.5">
+                {completedInvoice.customer?.name}
+                {completedInvoice.customer?.mobile ? ` · ${completedInvoice.customer.mobile}` : ''}
+              </p>
+            )}
+          </div>
+          <div className="px-4 py-3 space-y-1.5 max-h-48 overflow-y-auto">
+            {(completedInvoice.items || []).map((it) => (
+              <div key={it.id || it.productName} className="flex justify-between gap-2 text-sm">
+                <span className="truncate text-charcoal">
                   {it.productName}
                   {it.productType === 'PER_ML' ? ` · ${it.quantity} ml` : ''}
                 </span>
-                <span className="shrink-0 font-medium">{formatINR(it.lineTotalPaise)}</span>
+                <span className="shrink-0 font-semibold text-charcoal">
+                  {formatINR(it.lineTotalPaise)}
+                </span>
               </div>
             ))}
           </div>
-          <div className="text-xs text-muted mt-3 text-left">
+          <div className="px-4 py-2.5 bg-ivory/80 border-t border-border text-[11px] text-muted">
             Paid:{' '}
-            {completedInvoice.payments
-              ?.map((p) => `${p.method} ${formatINR(p.amountPaise)}`)
-              .join(' + ')}
+            <span className="text-charcoal font-medium">
+              {(completedInvoice.payments || [])
+                .map((p) => `${p.method} ${formatINR(p.amountPaise)}`)
+                .join(' + ') || '—'}
+            </span>
           </div>
-          <div className="flex flex-col gap-2 mt-6">
+          <div className="p-3 space-y-2">
             <a
               href={`https://wa.me/?text=${encodeURIComponent(
-                `*Amwaj Invoice ${completedInvoice.invoiceNumber}*\nTotal: ${formatINR(completedInvoice.totalPaise)}\nThank you!`
+                `*Amwaj Invoice ${completedInvoice.invoiceNumber}
+Total: ${formatINR(completedInvoice.totalPaise)}
+Thank you!`
               )}`}
               target="_blank"
               rel="noreferrer"
-              className="btn-primary w-full text-center"
+              className="btn-primary w-full text-center text-sm py-2.5 block"
             >
               Share on WhatsApp
             </a>
-            <button onClick={startNewBill} className="w-full py-3 rounded-xl border border-border font-semibold text-charcoal active:bg-ivory">
+            <button
+              onClick={startNewBill}
+              className="w-full py-2.5 rounded-xl border border-border text-sm font-semibold text-charcoal active:bg-ivory"
+            >
               New Bill
             </button>
           </div>
@@ -380,16 +405,16 @@ export default function BillPage() {
   if (view === 'review') {
     return (
       <div className="min-h-full bg-ivory flex flex-col md:hidden">
-        <header className="bg-emerald text-white px-4 py-3 flex items-center gap-3 sticky top-0 z-20">
+        <header className="bg-white border-b border-border px-3 py-2.5 flex items-center gap-3 sticky top-0 z-20">
           <button
             onClick={() => setView('browse')}
-            className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center"
+            className="w-9 h-9 rounded-xl bg-ivory border border-border flex items-center justify-center text-charcoal"
           >
             <ArrowLeft size={18} />
           </button>
           <div>
-            <h1 className="font-semibold">Review Bill</h1>
-            <p className="text-xs text-white/70">{cart.length} items</p>
+            <h1 className="font-semibold text-sm text-charcoal">Review Bill</h1>
+            <p className="text-[11px] text-muted">{cart.length} items</p>
           </div>
         </header>
 
@@ -584,52 +609,39 @@ export default function BillPage() {
     <div className="flex flex-col h-full md:flex-row md:h-[calc(100vh-0px)]">
       {/* ── Product catalog ── */}
       <div className="flex-1 flex flex-col min-h-0 md:border-r border-border">
-        {/* Header */}
-        <div className="bg-emerald text-white px-4 pt-3 pb-3 shrink-0">
-          <div className="flex items-center justify-between mb-2.5">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gold/20 flex items-center justify-center">
-                <svg width="18" height="18" viewBox="0 0 64 64" fill="none">
-                  <path d="M32 14c-2 6-6 10-10 14 4 2 8 4 10 8 2-4 6-6 10-8-4-4-8-8-10-14z" fill="#C69A50"/>
-                </svg>
-              </div>
-              <div>
-                <span className="font-bold text-lg leading-none">Amwaj</span>
-                <span className="ml-1.5 text-[10px] bg-gold text-emerald-dark font-semibold px-1.5 py-0.5 rounded">POS</span>
-              </div>
-            </div>
-            <div className="text-xs text-white/80 truncate max-w-[100px]">{user?.name}</div>
+                {/* Bill toolbar — global Amwaj header lives in AppShell */}
+        <div className="bg-white border-b border-border px-3 py-2.5 shrink-0 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="text-sm font-bold text-charcoal leading-tight">New Bill</h1>
+            <p className="text-[11px] text-muted">Select products</p>
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-base font-semibold leading-tight">New Bill</h1>
-              <p className="text-white/65 text-[11px]">Select products</p>
-            </div>
-            <button
-              onClick={() => setShowCustomerModal(true)}
-              className="flex items-center gap-1.5 bg-gold text-emerald-dark text-xs font-semibold px-3 py-2 rounded-xl"
-            >
-              <UserPlus size={14} />
-              {customer ? customer.name.split(' ')[0] : 'Customer'}
-            </button>
-          </div>
+          <button
+            onClick={() => setShowCustomerModal(true)}
+            className="flex items-center gap-1.5 bg-emerald text-white text-xs font-semibold px-3 py-2 rounded-xl shrink-0 active:bg-emerald-dark"
+          >
+            <UserPlus size={14} />
+            {customer ? (customer.name || '').split(' ')[0] : 'Customer'}
+          </button>
         </div>
 
-        {/* Categories — compact chips */}
-        <div className="px-3 py-2.5 overflow-x-auto no-scrollbar shrink-0">
+        {/* Categories — compact icon chips */}
+        <div className="px-3 py-2 overflow-x-auto no-scrollbar shrink-0 bg-ivory/80">
           <div className="flex gap-1.5">
-            {categories.map((cat) => {
+            {(Array.isArray(categories) ? categories : []).map((cat) => {
               const active = activeCategory === cat.id;
+              const Icon = CATEGORY_ICON[cat.name] || Package;
               return (
                 <button
                   key={cat.id}
                   onClick={() => setActiveCategory(cat.id)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors ${
                     active
-                      ? 'bg-emerald text-white'
+                      ? 'bg-emerald text-white shadow-sm'
                       : 'bg-white border border-border text-muted'
+
                   }`}
                 >
+                  <Icon size={12} strokeWidth={2.2} className={active ? 'text-gold' : 'text-emerald/70'} />
                   {cat.name}
                 </button>
               );
@@ -637,7 +649,7 @@ export default function BillPage() {
           </div>
         </div>
 
-        {/* Search */}
+{/* Search */}
         <div className="px-3 pb-2 shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={16} />
@@ -656,27 +668,27 @@ export default function BillPage() {
             <p className="text-center text-muted text-sm py-10">No products found</p>
           ) : (
             <>
-              {/* Mobile: 2-column dense grid */}
-              <div className="grid grid-cols-2 gap-2 md:hidden">
+              {/* Mobile: compact 2-column grid */}
+              <div className="grid grid-cols-2 gap-1.5 md:hidden">
                 {filteredProducts.map((p) => (
                   <button
                     key={p.id}
                     onClick={() => addProduct(p)}
-                    className="bg-white rounded-2xl border border-border p-3 text-left active:scale-[0.98] transition-transform flex flex-col"
+                    className="bg-white rounded-xl border border-border px-2.5 py-2 text-left active:scale-[0.98] transition-transform flex items-center gap-1.5"
                   >
-                    <div className="font-medium text-sm text-charcoal leading-snug line-clamp-2 min-h-[2.5rem]">
-                      {p.name}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-[13px] text-charcoal leading-tight truncate">
+                        {p?.name || 'Product'}
+                      </div>
+                      <div className="text-[11px] text-muted mt-0.5 truncate">
+                        {p?.productType === 'PER_ML'
+                          ? `${formatINR(p?.unitPrice)}/ml`
+                          : formatINR(p?.unitPrice)}
+                      </div>
                     </div>
-                    <div className="flex items-end justify-between mt-2 gap-1">
-                      <span className="text-xs text-muted">
-                        {p.productType === 'PER_ML'
-                          ? `${formatINR(p.unitPrice)}/ml`
-                          : formatINR(p.unitPrice)}
-                      </span>
-                      <span className="w-7 h-7 rounded-full bg-emerald text-white flex items-center justify-center shrink-0">
-                        <Plus size={14} strokeWidth={2.5} />
-                      </span>
-                    </div>
+                    <span className="w-6 h-6 rounded-full bg-emerald text-white flex items-center justify-center shrink-0">
+                      <Plus size={12} strokeWidth={2.5} />
+                    </span>
                   </button>
                 ))}
               </div>
@@ -798,17 +810,17 @@ export default function BillPage() {
                 />
               ))}
             </div>
-            <div className="px-4 py-3 border-t border-border space-y-2 shrink-0">
+            <div className="px-4 py-2.5 border-t border-border space-y-1.5 shrink-0">
               <div className="flex justify-between items-center">
-                <span className="text-sm text-muted">{cart.length} items</span>
-                <span className="font-bold text-emerald">{formatINR(totalPaise)}</span>
+                <span className="text-xs text-muted">{cart.length} items</span>
+                <span className="font-bold text-emerald text-sm">{formatINR(totalPaise)}</span>
               </div>
               <button
                 onClick={() => {
                   setBillExpanded(false);
                   setView('review');
                 }}
-                className="btn-primary w-full py-3"
+                className="btn-primary w-full py-2.5 text-sm"
               >
                 Review Bill →
               </button>
@@ -816,12 +828,12 @@ export default function BillPage() {
           </div>
         )}
 
-        {/* Collapsed bar */}
+        {/* Collapsed bar — margin above bottom nav, compact controls */}
         {!billExpanded && (
-          <div className="pointer-events-auto mx-3 mb-2">
-            <div className="bg-white rounded-2xl shadow-card border border-border px-3 py-2.5 flex items-center gap-3">
+          <div className="pointer-events-auto mx-3 mb-3">
+            <div className="bg-white rounded-2xl shadow-card border border-border px-3 py-2 flex items-center gap-2.5">
               {cart.length === 0 ? (
-                <div className="flex-1 text-sm text-muted text-center py-1">
+                <div className="flex-1 text-xs text-muted text-center py-1">
                   Add products to start
                 </div>
               ) : (
@@ -830,17 +842,17 @@ export default function BillPage() {
                     onClick={() => setBillExpanded(true)}
                     className="flex-1 text-left min-w-0"
                   >
-                    <div className="text-xs text-muted flex items-center gap-1">
+                    <div className="text-[11px] text-muted flex items-center gap-1">
                       Bill items ({cart.length})
                       <ChevronUp size={12} />
                     </div>
-                    <div className="font-bold text-emerald text-sm">
+                    <div className="font-bold text-emerald text-sm leading-tight">
                       {formatINR(totalPaise)}
                     </div>
                   </button>
                   <button
                     onClick={() => setView('review')}
-                    className="shrink-0 bg-emerald text-white text-sm font-semibold px-4 py-2.5 rounded-xl active:bg-emerald-dark"
+                    className="shrink-0 bg-emerald text-white text-xs font-semibold px-3.5 py-2 rounded-xl active:bg-emerald-dark"
                   >
                     Review Bill →
                   </button>

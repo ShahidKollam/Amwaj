@@ -20,11 +20,17 @@ export default function ProductsPage() {
   });
 
   const load = () => {
+    setLoading(true);
     Promise.all([api.getProducts({ active: 'false' }), api.getCategories()])
       .then(([p, c]) => {
-        setProducts(p);
-        setCategories(c);
-        if (c[0]) setForm((f) => ({ ...f, categoryId: c[0].id }));
+        setProducts(Array.isArray(p) ? p : []);
+        setCategories(Array.isArray(c) ? c : []);
+        if (Array.isArray(c) && c[0]) setForm((f) => ({ ...f, categoryId: c[0].id }));
+      })
+      .catch((err) => {
+        console.error(err);
+        setProducts([]);
+        setCategories([]);
       })
       .finally(() => setLoading(false));
   };
@@ -66,6 +72,8 @@ export default function ProductsPage() {
 
       {loading ? (
         <p className="text-muted">Loading…</p>
+      ) : !Array.isArray(products) || products.length === 0 ? (
+        <div className="card p-8 text-center text-muted text-sm">No products yet</div>
       ) : (
         <div className="space-y-2">
           {products.map((p) => (
@@ -74,10 +82,10 @@ export default function ProductsPage() {
                 <Package size={18} />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">{p.name}</div>
+                <div className="font-medium truncate">{p?.name || '—'}</div>
                 <div className="text-xs text-muted">
-                  {p.category?.name} · {p.productType} · {formatINR(p.unitPrice)}
-                  {p.productType === 'PER_ML' ? '/ml' : ''}
+                  {p?.category?.name || '—'} · {p?.productType || ''} · {formatINR(p?.unitPrice)}
+                  {p?.productType === 'PER_ML' ? '/ml' : ''}
                 </div>
               </div>
               <span className={`text-xs px-2 py-0.5 rounded-full ${p.isActive ? 'bg-emerald/10 text-emerald' : 'bg-gray-100 text-muted'}`}>

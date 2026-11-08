@@ -14,6 +14,9 @@ import settingsRoutes from './modules/settings.js';
 
 const app = express();
 
+// Disable ETag so API clients always get full JSON bodies (avoid empty 304 responses)
+app.set('etag', false);
+
 app.use(helmet());
 app.use(cors({ origin: config.frontendOrigin, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
@@ -23,7 +26,7 @@ const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
   message: { error: 'Too many login attempts, try again later' },
-}); 
+});
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'amwaj-pos', time: new Date().toISOString() });

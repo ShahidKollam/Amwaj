@@ -41,12 +41,20 @@ export default function HistoryPage() {
         search: search.trim() || undefined,
         from: date,
         to: date,
-        limit: 200, // fetch day batch; paginate client-side for speed
+        date,
+        pageSize: 50,
       })
-      .then((list) => {
+      .then((res) => {
+        const list = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : [];
         setInvoices(list);
-        setDayTotal(list.reduce((s, inv) => s + (inv.totalPaise || 0), 0));
-        setDayCount(list.length);
+        setDayTotal(
+          typeof res?.dayTotalPaise === 'number'
+            ? res.dayTotalPaise
+            : list.reduce((s, inv) => s + (inv.totalPaise || 0), 0)
+        );
+        setDayCount(
+          typeof res?.dayBillCount === 'number' ? res.dayBillCount : list.length
+        );
         setPage(0);
       })
       .catch(console.error)
