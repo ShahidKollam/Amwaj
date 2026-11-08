@@ -1,17 +1,11 @@
-Amwaj POS v1.3.3 (20261108)
+Amwaj POS v1.3.4 (20261108)
 
-PostgreSQL + IndexedDB offline cache
-- Always-on mobile header + bottom nav (including completed receipt)
-- Premium receipt card under shell chrome
-- Compact icon category chips
-- Dense product cards + bill bar
-- Blank-page safety (array normalization, error boundaries)
-- Rich seed: ~63 products, 12 customers, sample invoices
-- Session persistence 30d JWT
-- TanStack Query + Dexie + Zustand cart
-- Offline bill queue + idempotencyKey
+Incremental update over v1.3.3:
+- Product edit + hard delete (API DELETE)
+- Products search + pagination
+- Customers server pagination + joined-date filter
+- History date filter + pagination (existing)
+- Bill catalog: icon-over-name category tiles, 2-col products
+- Always-on header/nav, catalog cache, offline cart
 
-Setup:
-  backend: set DATABASE_URL (Postgres), npm i && npx prisma generate && npx prisma db push && node prisma/seed.js && npm run dev
-  frontend: npm i && npm run dev
-Login: admin / amwaj2024
+PostgreSQL only. Login: admin / amwaj2024

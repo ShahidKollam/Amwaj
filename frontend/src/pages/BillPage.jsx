@@ -54,14 +54,20 @@ export default function BillPage() {
   const categoriesQuery = useCategories();
 
   useEffect(() => {
-    if (Array.isArray(productsQuery.data)) setProducts(productsQuery.data);
-    if (Array.isArray(categoriesQuery.data)) {
-      setCategories(categoriesQuery.data);
-      setActiveCategory((prev) => prev || categoriesQuery.data[0]?.id || null);
+    const prods = Array.isArray(productsQuery.data) ? productsQuery.data : [];
+    const cats = Array.isArray(categoriesQuery.data) ? categoriesQuery.data : [];
+    if (prods.length) setProducts(prods);
+    else if (!productsQuery.isLoading && productsQuery.isFetched) setProducts([]);
+    if (cats.length) {
+      setCategories(cats);
+      setActiveCategory((prev) => {
+        if (prev && cats.some((c) => c.id === prev)) return prev;
+        return cats[0]?.id || null;
+      });
     }
     if (!productsQuery.isLoading && !categoriesQuery.isLoading) setLoading(false);
-    if (productsQuery.data || categoriesQuery.data) setLoading(false);
-  }, [productsQuery.data, categoriesQuery.data, productsQuery.isLoading, categoriesQuery.isLoading]);
+    if (prods.length || cats.length) setLoading(false);
+  }, [productsQuery.data, categoriesQuery.data, productsQuery.isLoading, categoriesQuery.isLoading, productsQuery.isFetched]);
 
   // Restore unfinished bill from IndexedDB once
   useEffect(() => {
@@ -624,32 +630,40 @@ Thank you!`
           </button>
         </div>
 
-        {/* Categories — compact icon chips */}
-        <div className="px-3 py-2 overflow-x-auto no-scrollbar shrink-0 bg-ivory/80">
-          <div className="flex gap-1.5">
+        {/* Categories — icon on top, name below; even tiles */}
+        <div className="px-3 py-2 shrink-0 bg-white border-b border-border">
+          <div className="grid grid-cols-5 gap-1.5">
             {(Array.isArray(categories) ? categories : []).map((cat) => {
               const active = activeCategory === cat.id;
               const Icon = CATEGORY_ICON[cat.name] || Package;
               return (
                 <button
                   key={cat.id}
+                  type="button"
                   onClick={() => setActiveCategory(cat.id)}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors ${
+                  className={`flex flex-col items-center justify-center gap-1 py-2 px-0.5 rounded-xl transition-colors min-h-[58px] ${
                     active
                       ? 'bg-emerald text-white shadow-sm'
-                      : 'bg-white border border-border text-muted'
-
+                      : 'bg-ivory text-charcoal border border-border'
                   }`}
                 >
-                  <Icon size={12} strokeWidth={2.2} className={active ? 'text-gold' : 'text-emerald/70'} />
-                  {cat.name}
+                  <Icon
+                    size={18}
+                    strokeWidth={2}
+                    className={active ? 'text-gold' : 'text-emerald'}
+                  />
+                  <span className={`text-[10px] font-semibold leading-tight text-center truncate w-full px-0.5 ${
+                    active ? 'text-white' : 'text-muted'
+                  }`}>
+                    {cat.name}
+                  </span>
                 </button>
               );
             })}
           </div>
         </div>
 
-{/* Search */}
+        {/* Search */}
         <div className="px-3 pb-2 shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={16} />
@@ -668,27 +682,28 @@ Thank you!`
             <p className="text-center text-muted text-sm py-10">No products found</p>
           ) : (
             <>
-              {/* Mobile: compact 2-column grid */}
-              <div className="grid grid-cols-2 gap-1.5 md:hidden">
+              {/* Mobile: 2 products per row — aligned name, price, add */}
+              <div className="grid grid-cols-2 gap-2 md:hidden">
                 {filteredProducts.map((p) => (
                   <button
                     key={p.id}
+                    type="button"
                     onClick={() => addProduct(p)}
-                    className="bg-white rounded-xl border border-border px-2.5 py-2 text-left active:scale-[0.98] transition-transform flex items-center gap-1.5"
+                    className="bg-white rounded-xl border border-border p-2.5 text-left active:scale-[0.98] transition-transform flex flex-col min-h-[72px]"
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-[13px] text-charcoal leading-tight truncate">
-                        {p?.name || 'Product'}
-                      </div>
-                      <div className="text-[11px] text-muted mt-0.5 truncate">
+                    <div className="font-medium text-[13px] text-charcoal leading-snug line-clamp-2 min-h-[2rem]">
+                      {p?.name || 'Product'}
+                    </div>
+                    <div className="mt-auto pt-1.5 flex items-center justify-between gap-1">
+                      <span className="text-[11px] font-semibold text-emerald truncate">
                         {p?.productType === 'PER_ML'
                           ? `${formatINR(p?.unitPrice)}/ml`
                           : formatINR(p?.unitPrice)}
-                      </div>
+                      </span>
+                      <span className="w-6 h-6 rounded-full bg-emerald text-white flex items-center justify-center shrink-0">
+                        <Plus size={12} strokeWidth={2.5} />
+                      </span>
                     </div>
-                    <span className="w-6 h-6 rounded-full bg-emerald text-white flex items-center justify-center shrink-0">
-                      <Plus size={12} strokeWidth={2.5} />
-                    </span>
                   </button>
                 ))}
               </div>

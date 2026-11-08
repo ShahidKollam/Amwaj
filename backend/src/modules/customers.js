@@ -8,15 +8,30 @@ router.use(requireAuth);
 
 router.get('/', async (req, res, next) => {
   try {
-    const { search, page = 1, pageSize = 20 } = req.query;
-    const where = search
-      ? {
-          OR: [
-            { name: { contains: search } },
-            { mobile: { contains: search } },
-          ],
-        }
-      : {};
+    const { search, page = 1, pageSize = 20, date, from, to } = req.query;
+    const where = {};
+    if (search) {
+      where.OR = [
+        { name: { contains: search } },
+        { mobile: { contains: search } },
+      ];
+    }
+    // Optional created-date filter (single day or range)
+    if (date) {
+      const start = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(date);
+      end.setHours(23, 59, 59, 999);
+      where.createdAt = { gte: start, lte: end };
+    } else if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = new Date(from);
+      if (to) {
+        const end = new Date(to);
+        end.setHours(23, 59, 59, 999);
+        where.createdAt.lte = end;
+      }
+    }
 
     const take = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
     const skip = (Math.max(Number(page) || 1, 1) - 1) * take;

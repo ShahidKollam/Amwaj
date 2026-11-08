@@ -1,6 +1,6 @@
 /**
  * Products & categories with IndexedDB cache + TanStack Query.
- * Shows cached data immediately; refreshes in background.
+ * Shows cached data immediately; refreshes from backend in background.
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
@@ -12,14 +12,22 @@ import {
 } from '../lib/db';
 import { queryKeys } from '../lib/queryClient';
 
+function asArray(data) {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.items)) return data.items;
+  return [];
+}
+
 async function fetchProducts() {
-  const data = await api.getProducts();
+  const raw = await api.getProducts();
+  const data = asArray(raw);
   await cacheProducts(data).catch(console.error);
   return data;
 }
 
 async function fetchCategories() {
-  const data = await api.getCategories();
+  const raw = await api.getCategories();
+  const data = asArray(raw);
   await cacheCategories(data).catch(console.error);
   return data;
 }
@@ -28,9 +36,8 @@ export function useProducts() {
   return useQuery({
     queryKey: queryKeys.products,
     queryFn: fetchProducts,
-    placeholderData: () => undefined,
-    initialData: () => undefined,
-    // Hydrate from IndexedDB once, then keep in Query cache
+    staleTime: 1000 * 60 * 30,
+    gcTime: 1000 * 60 * 60 * 24 * 7,
   });
 }
 
@@ -41,13 +48,11 @@ export async function hydrateCatalogFromIdb(qc) {
       getCachedProducts(),
       getCachedCategories(),
     ]);
-    if (products?.length) {
-      qc.setQueryData(queryKeys.products, products);
-    }
-    if (categories?.length) {
-      qc.setQueryData(queryKeys.categories, categories);
-    }
-    return { products, categories };
+    const p = asArray(products);
+    const c = asArray(categories);
+    if (p.length) qc.setQueryData(queryKeys.products, p);
+    if (c.length) qc.setQueryData(queryKeys.categories, c);
+    return { products: p, categories: c };
   } catch (e) {
     console.error('IDB hydrate failed', e);
     return { products: [], categories: [] };
@@ -58,6 +63,8 @@ export function useCategories() {
   return useQuery({
     queryKey: queryKeys.categories,
     queryFn: fetchCategories,
+    staleTime: 1000 * 60 * 30,
+    gcTime: 1000 * 60 * 60 * 24 * 7,
   });
 }
 
@@ -67,10 +74,10 @@ export function useCreateProduct() {
     mutationFn: (data) => api.createProduct(data),
     onSuccess: async (product) => {
       qc.setQueryData(queryKeys.products, (old) => {
-        const list = Array.isArray(old) ? old : [];
+        const list = asArray(old);
         return [...list, product];
       });
-      const all = qc.getQueryData(queryKeys.products) || [];
+      const all = asArray(qc.getQueryData(queryKeys.products));
       await cacheProducts(all).catch(console.error);
     },
   });
@@ -82,10 +89,10 @@ export function useUpdateProduct() {
     mutationFn: ({ id, data }) => api.updateProduct(id, data),
     onSuccess: async (product) => {
       qc.setQueryData(queryKeys.products, (old) => {
-        const list = Array.isArray(old) ? old : [];
+        const list = asArray(old);
         return list.map((p) => (p.id === product.id ? product : p));
       });
-      const all = qc.getQueryData(queryKeys.products) || [];
+      const all = asArray(qc.getQueryData(queryKeys.products));
       await cacheProducts(all).catch(console.error);
     },
   });

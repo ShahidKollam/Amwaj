@@ -1,24 +1,37 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../services/api';
-import { Search, User, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, User, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 
 const PAGE_SIZE = 20;
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState('');
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [date, setDate] = useState(''); // empty = all dates
 
   const load = useCallback(() => {
     setLoading(true);
     setError('');
     api
-      .getCustomers(search.trim() ? search.trim() : {})
-      .then((list) => {
-        setCustomers(Array.isArray(list) ? list : []);
-        setPage(0);
+      .getCustomersPage({
+        search: search.trim() || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+        date: date || undefined,
+      })
+      .then((res) => {
+        setCustomers(Array.isArray(res?.items) ? res.items : []);
+        setTotal(res?.total ?? 0);
+        setTotalPages(Math.max(1, res?.totalPages ?? 1));
       })
       .catch((err) => {
         console.error(err);
@@ -26,23 +39,23 @@ export default function CustomersPage() {
         setError(err?.message || 'Could not load customers');
       })
       .finally(() => setLoading(false));
-  }, [search]);
+  }, [search, page, date]);
 
   useEffect(() => {
     const t = setTimeout(load, search ? 280 : 0);
     return () => clearTimeout(t);
   }, [load, search]);
 
-  const list = Array.isArray(customers) ? customers : [];
-  const pageItems = list.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [search, date]);
 
   return (
     <div className="p-4 max-w-3xl mx-auto pb-6">
       <h1 className="text-xl font-bold text-charcoal mb-1">Customers</h1>
-      <p className="text-sm text-muted mb-4">{list.length} total</p>
+      <p className="text-sm text-muted mb-3">{total} total</p>
 
-      <div className="relative mb-4">
+      <div className="relative mb-2">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={18} />
         <input
           className="input pl-10 py-2.5 text-sm"
@@ -50,6 +63,29 @@ export default function CustomersPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+      </div>
+
+      {/* Date filter */}
+      <div className="card p-2.5 mb-3 flex items-center gap-2">
+        <Calendar size={16} className="text-muted shrink-0" />
+        <input
+          type="date"
+          className="flex-1 text-sm border-0 bg-transparent focus:outline-none text-charcoal"
+          value={date}
+          max={todayISO()}
+          onChange={(e) => setDate(e.target.value)}
+        />
+        {date ? (
+          <button
+            type="button"
+            onClick={() => setDate('')}
+            className="text-xs font-semibold text-emerald px-2 py-1"
+          >
+            All dates
+          </button>
+        ) : (
+          <span className="text-[11px] text-muted pr-1">Filter by joined date</span>
+        )}
       </div>
 
       {error && (
@@ -67,21 +103,26 @@ export default function CustomersPage() {
             <div key={i} className="card h-14 animate-pulse bg-ivory" />
           ))}
         </div>
-      ) : pageItems.length === 0 ? (
+      ) : customers.length === 0 ? (
         <div className="card p-8 text-center text-muted text-sm">
-          {search ? 'No matching customers' : 'No customers yet'}
+          {search || date ? 'No matching customers' : 'No customers yet'}
         </div>
       ) : (
         <>
           <div className="space-y-2">
-            {pageItems.map((c) => (
+            {customers.map((c) => (
               <div key={c?.id || c?.mobile} className="card flex items-center gap-3 p-3">
                 <div className="w-10 h-10 rounded-full bg-emerald/10 flex items-center justify-center text-emerald shrink-0">
                   <User size={18} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm truncate">{c?.name || '—'}</div>
-                  <div className="text-xs text-muted">{c?.mobile || ''}</div>
+                  <div className="text-xs text-muted">
+                    {c?.mobile || ''}
+                    {c?.createdAt
+                      ? ` · ${new Date(c.createdAt).toLocaleDateString('en-IN')}`
+                      : ''}
+                  </div>
                 </div>
               </div>
             ))}
@@ -90,18 +131,20 @@ export default function CustomersPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-3 mt-4">
               <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
                 className="w-9 h-9 rounded-xl border border-border flex items-center justify-center disabled:opacity-30"
               >
                 <ChevronLeft size={18} />
               </button>
               <span className="text-sm text-muted">
-                {page + 1} / {totalPages}
+                {page} / {totalPages}
               </span>
               <button
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                disabled={page >= totalPages - 1}
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
                 className="w-9 h-9 rounded-xl border border-border flex items-center justify-center disabled:opacity-30"
               >
                 <ChevronRight size={18} />

@@ -53,12 +53,15 @@ export const api = {
     request('/products', { method: 'POST', body: JSON.stringify(data) }),
   updateProduct: (id, data) =>
     request(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteProduct: (id) =>
+    request(`/products/${id}`, { method: 'DELETE' }),
 
   getCustomers: async (params) => {
     // Accept string search, object params, or nothing
+    // Returns array for simple callers (Bill customer picker)
     const query =
       typeof params === 'string'
-        ? { search: params }
+        ? { search: params, pageSize: 50 }
         : params && typeof params === 'object'
           ? params
           : {};
@@ -68,10 +71,29 @@ export const api = {
       )
     ).toString();
     const data = await request(`/customers${q ? `?${q}` : ''}`);
-    // Backend may return { items, total, ... } or a plain array
     if (Array.isArray(data)) return data;
     if (data && Array.isArray(data.items)) return data.items;
     return [];
+  },
+  /** Full paginated customers payload for Customers page */
+  getCustomersPage: async (params = {}) => {
+    const safe = params && typeof params === 'object' ? params : {};
+    const q = new URLSearchParams(
+      Object.fromEntries(
+        Object.entries(safe).filter(([, v]) => v != null && v !== '')
+      )
+    ).toString();
+    const data = await request(`/customers${q ? `?${q}` : ''}`);
+    if (Array.isArray(data)) {
+      return { items: data, total: data.length, page: 1, pageSize: data.length, totalPages: 1 };
+    }
+    return {
+      items: Array.isArray(data?.items) ? data.items : [],
+      total: data?.total ?? 0,
+      page: data?.page ?? 1,
+      pageSize: data?.pageSize ?? 20,
+      totalPages: data?.totalPages ?? 1,
+    };
   },
   getCustomer: (id) => request(`/customers/${id}`),
   createCustomer: (data) =>

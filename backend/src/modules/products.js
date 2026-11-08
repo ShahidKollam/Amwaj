@@ -65,9 +65,28 @@ router.put('/:id', async (req, res, next) => {
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data,
+      include: { category: true },
     });
     res.json(product);
   } catch (err) {
+    next(err);
+  }
+});
+
+/** Hard delete product (permanent). Fails if referenced by invoice items — returns clear error. */
+router.delete('/:id', async (req, res, next) => {
+  try {
+    await prisma.product.delete({ where: { id: req.params.id } });
+    res.json({ ok: true, id: req.params.id });
+  } catch (err) {
+    if (err.code === 'P2003' || err.code === 'P2014') {
+      return res.status(409).json({
+        error: 'Cannot delete: product is used on past bills. Deactivate it instead.',
+      });
+    }
+    if (err.code === 'P2025') {
+      return res.status(404).json({ error: 'Product not found' });
+    }
     next(err);
   }
 });
