@@ -1,0 +1,18 @@
+{
+  "name": "amwaj-pos",
+  "version": "1.0.0",
+  "description": "Amwaj POS - Premium internal Point of Sale for attar, oud, perfume & bakhoor shop",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "start:backend": "cd backend && npm start",
+    "db:migrate": "cd backend && npx prisma migrate dev",
+    "db:seed": "cd backend && node prisma/seed.js",
+    "db:generate": "cd backend && npx prisma generate"
+  },
+  "keywords": ["pos", "amwaj", "billing", "perfume"],
+  "author": "Amwaj",
+  "license": "UNLICENSED"
+}

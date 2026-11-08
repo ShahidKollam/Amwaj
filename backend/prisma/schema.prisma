@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  STAFF
+}
+
+enum ProductType {
+  PER_ML      // Attar / Oud
+  SPRAY
+  FIXED       // Bakhoor, Accessories, bottles
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+}
+
+enum InvoiceStatus {
+  COMPLETED
+  VOIDED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  username     String   @unique
+  passwordHash String
+  role         Role     @default(STAFF)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  invoices Invoice[]
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  name        String
+  categoryId  String
+  category    Category    @relation(fields: [categoryId], references: [id])
+  productType ProductType
+  // For PER_ML: price per ml in paise. For FIXED/SPRAY base: unit price in paise
+  unitPrice   Int
+  unit        String      // "ml", "piece", "packet"
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  invoiceItems InvoiceItem[]
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  mobile    String   @unique
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices Invoice[]
+}
+
+model Invoice {
+  id              String        @id @default(cuid())
+  invoiceNumber   String        @unique
+  status          InvoiceStatus @default(COMPLETED)
+  customerId      String?
+  customer        Customer?     @relation(fields: [customerId], references: [id])
+  createdById     String
+  createdBy       User          @relation(fields: [createdById], references: [id])
+  subtotalPaise   Int
+  additionalPaise Int           @default(0)
+  discountPaise   Int           @default(0)
+  totalPaise      Int
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  items    InvoiceItem[]
+  payments Payment[]
+}
+
+model InvoiceItem {
+  id              String  @id @default(cuid())
+  invoiceId       String
+  invoice         Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId       String?
+  product         Product? @relation(fields: [productId], references: [id])
+  // Snapshot fields so history stays correct
+  productName     String
+  productType     ProductType
+  unit            String
+  quantity        Decimal  @db.Decimal(12, 3) // ml or pieces
+  unitPricePaise  Int
+  lineTotalPaise  Int
+  discountPaise   Int      @default(0)
+  // Spray details (optional)
+  sprayBottleMl   Int?
+  sprayOilMl      Int?
+  sprayLiquidMl   Int?
+  notes           String?
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  invoiceId     String
+  invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  method        PaymentMethod
+  amountPaise   Int
+  createdAt     DateTime      @default(now())
+}
+
+model ShopSettings {
+  id              String   @id @default(cuid())
+  shopName        String   @default("Amwaj")
+  address         String?
+  phone           String?
+  gstin           String?
+  invoicePrefix   String   @default("AMW")
+  nextInvoiceSeq  Int      @default(1)
+  whatsappNumber  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
