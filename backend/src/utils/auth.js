@@ -10,8 +10,10 @@ export function comparePassword(password, hash) {
   return bcrypt.compare(password, hash);
 }
 
+// Internal POS: long-lived session (default 30 days). Override with JWT_EXPIRES env.
 export function signToken(payload) {
-  return jwt.sign(payload, config.jwtSecret, { expiresIn: '12h' });
+  const expiresIn = process.env.JWT_EXPIRES || '30d';
+  return jwt.sign(payload, config.jwtSecret, { expiresIn });
 }
 
 export function verifyToken(token) {

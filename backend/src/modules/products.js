@@ -27,7 +27,7 @@ router.get('/', async (req, res, next) => {
     if (categoryId) where.categoryId = categoryId;
     if (active !== 'false') where.isActive = true;
     if (search) {
-      where.name = { contains: search, mode: 'insensitive' };
+      where.name = { contains: search };
     }
     const products = await prisma.product.findMany({
       where,

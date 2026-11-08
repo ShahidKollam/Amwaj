@@ -37,11 +37,28 @@ const createBillSchema = z.object({
     })
   ).min(1),
   notes: z.string().optional().nullable(),
+  idempotencyKey: z.string().min(8).max(80).optional().nullable(),
 });
 
 router.post('/complete', async (req, res, next) => {
   try {
     const body = createBillSchema.parse(req.body);
+
+    // Idempotency: return existing invoice if same key already processed
+    if (body.idempotencyKey) {
+      const existing = await prisma.invoice.findUnique({
+        where: { idempotencyKey: body.idempotencyKey },
+        include: {
+          items: true,
+          payments: true,
+          customer: true,
+          createdBy: { select: { name: true } },
+        },
+      });
+      if (existing) {
+        return res.status(200).json(existing);
+      }
+    }
 
     // Calculate line totals and validate
     let subtotal = 0;
@@ -102,6 +119,7 @@ router.post('/complete', async (req, res, next) => {
       const invoice = await tx.invoice.create({
         data: {
           invoiceNumber,
+          idempotencyKey: body.idempotencyKey || null,
           customerId: body.customerId || null,
           createdById: req.user.id,
           subtotalPaise: subtotal,
@@ -151,32 +169,66 @@ router.post('/complete', async (req, res, next) => {
 
 router.get('/history', async (req, res, next) => {
   try {
-    const { search, from, to, limit = 50 } = req.query;
+    const { search, from, to, date, page = 1, pageSize = 20 } = req.query;
     const where = { status: 'COMPLETED' };
+
     if (search) {
       where.OR = [
-        { invoiceNumber: { contains: search, mode: 'insensitive' } },
-        { customer: { name: { contains: search, mode: 'insensitive' } } },
+        { invoiceNumber: { contains: search } },
+        { customer: { name: { contains: search } } },
         { customer: { mobile: { contains: search } } },
       ];
     }
-    if (from || to) {
+
+    // Single day filter (preferred for POS day view)
+    if (date) {
+      const start = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(date);
+      end.setHours(23, 59, 59, 999);
+      where.createdAt = { gte: start, lte: end };
+    } else if (from || to) {
       where.createdAt = {};
       if (from) where.createdAt.gte = new Date(from);
-      if (to) where.createdAt.lte = new Date(to);
+      if (to) {
+        const end = new Date(to);
+        end.setHours(23, 59, 59, 999);
+        where.createdAt.lte = end;
+      }
     }
 
-    const invoices = await prisma.invoice.findMany({
-      where,
-      include: {
-        customer: { select: { name: true, mobile: true } },
-        payments: true,
-        _count: { select: { items: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: Math.min(Number(limit) || 50, 100),
+    const take = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
+    const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
+
+    const [invoices, total, aggregates] = await Promise.all([
+      prisma.invoice.findMany({
+        where,
+        include: {
+          customer: { select: { name: true, mobile: true } },
+          payments: true,
+          _count: { select: { items: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      prisma.invoice.count({ where }),
+      prisma.invoice.aggregate({
+        where,
+        _sum: { totalPaise: true },
+        _count: true,
+      }),
+    ]);
+
+    res.json({
+      items: invoices,
+      total,
+      page: Math.max(Number(page) || 1, 1),
+      pageSize: take,
+      totalPages: Math.ceil(total / take) || 1,
+      dayTotalPaise: aggregates._sum.totalPaise || 0,
+      dayBillCount: aggregates._count || 0,
     });
-    res.json(invoices);
   } catch (err) {
     next(err);
   }

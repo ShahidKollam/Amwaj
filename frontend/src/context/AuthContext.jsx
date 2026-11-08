@@ -1,36 +1,69 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 
 const AuthContext = createContext(null);
 
+const TOKEN_KEY = 'amwaj_token';
+const USER_KEY = 'amwaj_user';
+
+function loadStoredUser() {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  // Restore user immediately from localStorage so UI stays logged-in across reloads/days
+  const [user, setUser] = useState(() => loadStoredUser());
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const token = localStorage.getItem('amwaj_token');
-    if (token) {
-      api.me()
-        .then((data) => setUser(data.user))
-        .catch(() => {
-          localStorage.removeItem('amwaj_token');
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
+  const persist = useCallback((token, userData) => {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    if (userData) {
+      localStorage.setItem(USER_KEY, JSON.stringify(userData));
+      setUser(userData);
     }
   }, []);
 
+  const clearSession = useCallback(() => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    setUser(null);
+  }, []);
+
+  // Validate token with server on startup; keep session if still valid
+  useEffect(() => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      clearSession();
+      setLoading(false);
+      return;
+    }
+
+    api
+      .me()
+      .then((data) => {
+        // Server confirms session — refresh stored user
+        persist(token, data.user);
+      })
+      .catch(() => {
+        // Token expired or invalid — force login
+        clearSession();
+      })
+      .finally(() => setLoading(false));
+  }, [persist, clearSession]);
+
   const login = async (username, password) => {
     const data = await api.login(username, password);
-    localStorage.setItem('amwaj_token', data.token);
-    setUser(data.user);
+    persist(data.token, data.user);
     return data.user;
   };
 
   const logout = () => {
-    localStorage.removeItem('amwaj_token');
-    setUser(null);
+    clearSession();
   };
 
   return (

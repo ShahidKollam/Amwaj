@@ -8,21 +8,36 @@ router.use(requireAuth);
 
 router.get('/', async (req, res, next) => {
   try {
-    const { search } = req.query;
+    const { search, page = 1, pageSize = 20 } = req.query;
     const where = search
       ? {
           OR: [
-            { name: { contains: search, mode: 'insensitive' } },
+            { name: { contains: search } },
             { mobile: { contains: search } },
           ],
         }
       : {};
-    const customers = await prisma.customer.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: 100,
+
+    const take = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
+    const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
+
+    const [customers, total] = await Promise.all([
+      prisma.customer.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      prisma.customer.count({ where }),
+    ]);
+
+    res.json({
+      items: customers,
+      total,
+      page: Math.max(Number(page) || 1, 1),
+      pageSize: take,
+      totalPages: Math.ceil(total / take) || 1,
     });
-    res.json(customers);
   } catch (err) {
     next(err);
   }

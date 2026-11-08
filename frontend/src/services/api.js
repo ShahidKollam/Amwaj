@@ -1,7 +1,9 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api/v1';
+const TOKEN_KEY = 'amwaj_token';
+const USER_KEY = 'amwaj_user';
 
 function getToken() {
-  return localStorage.getItem('amwaj_token');
+  return localStorage.getItem(TOKEN_KEY);
 }
 
 async function request(path, options = {}) {
@@ -16,6 +18,12 @@ async function request(path, options = {}) {
     ...options,
     headers,
   });
+
+  // Session expired — clear storage so next load goes to login
+  if (res.status === 401 && !path.includes('/auth/login')) {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  }
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -43,8 +51,14 @@ export const api = {
   updateProduct: (id, data) =>
     request(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
-  getCustomers: (search) =>
-    request(`/customers${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  getCustomers: (params = {}) => {
+    // support legacy string search or object params
+    const query = typeof params === 'string' ? { search: params } : params;
+    const q = new URLSearchParams(
+      Object.fromEntries(Object.entries(query).filter(([, v]) => v != null && v !== ''))
+    ).toString();
+    return request(`/customers${q ? `?${q}` : ''}`);
+  },
   getCustomer: (id) => request(`/customers/${id}`),
   createCustomer: (data) =>
     request('/customers', { method: 'POST', body: JSON.stringify(data) }),
@@ -52,7 +66,9 @@ export const api = {
   completeBill: (data) =>
     request('/billing/complete', { method: 'POST', body: JSON.stringify(data) }),
   getHistory: (params = {}) => {
-    const q = new URLSearchParams(params).toString();
+    const q = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+    ).toString();
     return request(`/billing/history${q ? `?${q}` : ''}`);
   },
   getInvoice: (id) => request(`/billing/${id}`),

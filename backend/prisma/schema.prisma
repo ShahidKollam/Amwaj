@@ -81,6 +81,7 @@ model Customer {
 model Invoice {
   id              String        @id @default(cuid())
   invoiceNumber   String        @unique
+  idempotencyKey  String?       @unique
   status          InvoiceStatus @default(COMPLETED)
   customerId      String?
   customer        Customer?     @relation(fields: [customerId], references: [id])

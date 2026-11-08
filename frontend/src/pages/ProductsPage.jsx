@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { api, formatINR } from '../services/api';
 import { Plus, Package } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../lib/queryClient';
+import { cacheProducts, cacheCategories } from '../lib/db';
 
 export default function ProductsPage() {
+  const qc = useQueryClient();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,15 +34,24 @@ export default function ProductsPage() {
   const handleCreate = async (e) => {
     e.preventDefault();
     try {
-      await api.createProduct({
+      const created = await api.createProduct({
         ...form,
         unitPrice: Math.round(Number(form.unitPrice) * 100),
       });
+      // Update TanStack + IndexedDB caches immediately
+      qc.setQueryData(queryKeys.products, (old) => {
+        const list = Array.isArray(old) ? old : [];
+        return [...list, created];
+      });
+      const all = qc.getQueryData(queryKeys.products) || [];
+      cacheProducts(all).catch(console.error);
       setShowForm(false);
       setForm({ name: '', categoryId: categories[0]?.id || '', productType: 'PER_ML', unitPrice: '', unit: 'ml' });
       load();
     } catch (err) {
-      alert(err.message);
+      // Prefer inline UX over browser alert
+      window.__amwajLastError = err.message;
+      console.error(err);
     }
   };
 

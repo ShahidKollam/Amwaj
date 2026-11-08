@@ -1,32 +1,134 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { api, formatINR } from '../services/api';
-import { Search, FileText } from 'lucide-react';
+import { Search, FileText, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
+import Modal from '../components/Modal';
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatDateLabel(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  const today = todayISO();
+  if (iso === today) return 'Today';
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (iso === yesterday.toISOString().slice(0, 10)) return 'Yesterday';
+  return d.toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+const PAGE_SIZE = 20;
 
 export default function HistoryPage() {
   const [invoices, setInvoices] = useState([]);
   const [search, setSearch] = useState('');
+  const [date, setDate] = useState(todayISO());
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [dayTotal, setDayTotal] = useState(0);
+  const [dayCount, setDayCount] = useState(0);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api
+      .getHistory({
+        search: search.trim() || undefined,
+        from: date,
+        to: date,
+        limit: 200, // fetch day batch; paginate client-side for speed
+      })
+      .then((list) => {
+        setInvoices(list);
+        setDayTotal(list.reduce((s, inv) => s + (inv.totalPaise || 0), 0));
+        setDayCount(list.length);
+        setPage(0);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [search, date]);
 
   useEffect(() => {
-    setLoading(true);
-    api.getHistory({ search })
-      .then(setInvoices)
-      .finally(() => setLoading(false));
-  }, [search]);
+    const t = setTimeout(load, search ? 280 : 0); // debounce search
+    return () => clearTimeout(t);
+  }, [load, search]);
 
   const openInvoice = async (id) => {
-    const inv = await api.getInvoice(id);
-    setSelected(inv);
+    try {
+      const inv = await api.getInvoice(id);
+      setSelected(inv);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
+  const shiftDate = (delta) => {
+    const d = new Date(date + 'T12:00:00');
+    d.setDate(d.getDate() + delta);
+    const next = d.toISOString().slice(0, 10);
+    if (next > todayISO()) return;
+    setDate(next);
+  };
+
+  const pageItems = invoices.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(invoices.length / PAGE_SIZE));
+
   return (
-    <div className="p-4 max-w-3xl mx-auto">
+    <div className="p-4 max-w-3xl mx-auto pb-6">
       <h1 className="text-xl font-bold text-charcoal mb-4">History</h1>
+
+      {/* Date navigator */}
+      <div className="card p-3 mb-3 flex items-center gap-2">
+        <button
+          onClick={() => shiftDate(-1)}
+          className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-muted active:bg-ivory"
+        >
+          <ChevronLeft size={18} />
+        </button>
+        <div className="flex-1 text-center">
+          <div className="font-semibold text-charcoal text-sm">{formatDateLabel(date)}</div>
+          <label className="inline-flex items-center gap-1 text-xs text-muted mt-0.5 cursor-pointer">
+            <Calendar size={12} />
+            <input
+              type="date"
+              value={date}
+              max={todayISO()}
+              onChange={(e) => setDate(e.target.value)}
+              className="bg-transparent text-xs text-muted border-0 p-0 focus:outline-none"
+            />
+          </label>
+        </div>
+        <button
+          onClick={() => shiftDate(1)}
+          disabled={date >= todayISO()}
+          className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-muted active:bg-ivory disabled:opacity-30"
+        >
+          <ChevronRight size={18} />
+        </button>
+      </div>
+
+      {/* Day summary */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <div className="card p-3 text-center">
+          <div className="text-lg font-bold text-emerald">{formatINR(dayTotal)}</div>
+          <div className="text-[11px] text-muted">Day total</div>
+        </div>
+        <div className="card p-3 text-center">
+          <div className="text-lg font-bold text-charcoal">{dayCount}</div>
+          <div className="text-[11px] text-muted">Bills</div>
+        </div>
+      </div>
+
+      {/* Search */}
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={18} />
         <input
-          className="input pl-10"
+          className="input pl-10 py-2.5 text-sm"
           placeholder="Search invoice or customer…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -34,44 +136,98 @@ export default function HistoryPage() {
       </div>
 
       {loading ? (
-        <p className="text-muted">Loading…</p>
-      ) : invoices.length === 0 ? (
-        <p className="text-muted text-center py-8">No invoices yet</p>
-      ) : (
         <div className="space-y-2">
-          {invoices.map((inv) => (
-            <button
-              key={inv.id}
-              onClick={() => openInvoice(inv.id)}
-              className="card w-full flex items-center gap-3 p-3 text-left"
-            >
-              <div className="w-10 h-10 rounded-xl bg-emerald/10 flex items-center justify-center text-emerald">
-                <FileText size={18} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium">{inv.invoiceNumber}</div>
-                <div className="text-xs text-muted">
-                  {inv.customer?.name || 'Walk-in'} · {new Date(inv.createdAt).toLocaleString('en-IN')}
-                </div>
-              </div>
-              <div className="font-semibold text-emerald">{formatINR(inv.totalPaise)}</div>
-            </button>
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="card h-16 animate-pulse bg-ivory" />
           ))}
         </div>
+      ) : pageItems.length === 0 ? (
+        <div className="card p-8 text-center text-muted text-sm">
+          No bills on this date
+        </div>
+      ) : (
+        <>
+          <div className="space-y-2">
+            {pageItems.map((inv) => (
+              <button
+                key={inv.id}
+                onClick={() => openInvoice(inv.id)}
+                className="card w-full flex items-center gap-3 p-3 text-left active:scale-[0.99] transition-transform"
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald/10 flex items-center justify-center text-emerald shrink-0">
+                  <FileText size={18} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm">{inv.invoiceNumber}</div>
+                  <div className="text-xs text-muted truncate">
+                    {inv.customer?.name || 'Walk-in'} ·{' '}
+                    {new Date(inv.createdAt).toLocaleTimeString('en-IN', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </div>
+                </div>
+                <div className="font-semibold text-emerald text-sm shrink-0">
+                  {formatINR(inv.totalPaise)}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 mt-4">
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="w-9 h-9 rounded-xl border border-border flex items-center justify-center disabled:opacity-30"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <span className="text-sm text-muted">
+                {page + 1} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+                className="w-9 h-9 rounded-xl border border-border flex items-center justify-center disabled:opacity-30"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          )}
+        </>
       )}
 
-      {selected && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md max-h-[85vh] overflow-y-auto p-5">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h3 className="font-bold text-lg">{selected.invoiceNumber}</h3>
-                <p className="text-sm text-muted">{new Date(selected.createdAt).toLocaleString('en-IN')}</p>
-              </div>
-              <button onClick={() => setSelected(null)} className="text-muted">Close</button>
-            </div>
+      {/* Invoice detail modal */}
+      <Modal
+        open={!!selected}
+        onClose={() => setSelected(null)}
+        title={selected?.invoiceNumber || 'Invoice'}
+        footer={
+          selected && (
+            <a
+              href={`https://wa.me/?text=${encodeURIComponent(
+                `*Amwaj Invoice ${selected.invoiceNumber}*\nTotal: ${formatINR(selected.totalPaise)}\nThank you!`
+              )}`}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-primary w-full text-center block"
+            >
+              Share on WhatsApp
+            </a>
+          )
+        }
+      >
+        {selected && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted">
+              {new Date(selected.createdAt).toLocaleString('en-IN')}
+            </p>
             {selected.customer && (
-              <p className="text-sm mb-3">{selected.customer.name} · {selected.customer.mobile}</p>
+              <p className="text-sm">
+                {selected.customer.name} · {selected.customer.mobile}
+              </p>
             )}
             <div className="space-y-2 border-t border-border pt-3">
               {selected.items.map((it) => (
@@ -80,39 +236,41 @@ export default function HistoryPage() {
                     {it.productName}
                     {it.productType === 'PER_ML' ? ` (${it.quantity} ml)` : ''}
                   </span>
-                  <span>{formatINR(it.lineTotalPaise)}</span>
+                  <span className="font-medium">{formatINR(it.lineTotalPaise)}</span>
                 </div>
               ))}
             </div>
-            <div className="border-t border-border mt-3 pt-3 space-y-1 text-sm">
-              <div className="flex justify-between"><span className="text-muted">Subtotal</span><span>{formatINR(selected.subtotalPaise)}</span></div>
+            <div className="border-t border-border pt-3 space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted">Subtotal</span>
+                <span>{formatINR(selected.subtotalPaise)}</span>
+              </div>
               {selected.additionalPaise > 0 && (
-                <div className="flex justify-between"><span className="text-muted">Additional</span><span>{formatINR(selected.additionalPaise)}</span></div>
+                <div className="flex justify-between">
+                  <span className="text-muted">Additional</span>
+                  <span>{formatINR(selected.additionalPaise)}</span>
+                </div>
               )}
               {selected.discountPaise > 0 && (
-                <div className="flex justify-between"><span className="text-muted">Discount</span><span>-{formatINR(selected.discountPaise)}</span></div>
+                <div className="flex justify-between">
+                  <span className="text-muted">Discount</span>
+                  <span>-{formatINR(selected.discountPaise)}</span>
+                </div>
               )}
               <div className="flex justify-between font-bold text-base pt-1">
                 <span>Total</span>
                 <span className="text-emerald">{formatINR(selected.totalPaise)}</span>
               </div>
             </div>
-            <div className="mt-3 text-xs text-muted">
-              Paid: {selected.payments.map((p) => `${p.method} ${formatINR(p.amountPaise)}`).join(' + ')}
+            <div className="text-xs text-muted pt-1">
+              Paid:{' '}
+              {selected.payments
+                ?.map((p) => `${p.method} ${formatINR(p.amountPaise)}`)
+                .join(' + ')}
             </div>
-            <a
-              href={`https://wa.me/?text=${encodeURIComponent(
-                `*Amwaj Invoice ${selected.invoiceNumber}*\nTotal: ${formatINR(selected.totalPaise)}\nThank you!`
-              )}`}
-              target="_blank"
-              rel="noreferrer"
-              className="btn-primary w-full mt-4 text-center block"
-            >
-              Share on WhatsApp
-            </a>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

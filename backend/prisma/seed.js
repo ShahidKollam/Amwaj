@@ -67,31 +67,18 @@ async function main() {
   }
 
   // Shop settings
-  await prisma.shopSettings.upsert({
-    where: { id: 'default' },
-    update: {},
-    create: {
-      id: 'default',
-      shopName: 'Amwaj',
-      address: 'Your Shop Address',
-      phone: '',
-      invoicePrefix: 'AMW',
-      nextInvoiceSeq: 1,
-    },
-  }).catch(async () => {
-    // if id constraint, just create if none
-    const count = await prisma.shopSettings.count();
-    if (count === 0) {
-      await prisma.shopSettings.create({
-        data: {
-          shopName: 'Amwaj',
-          address: 'Your Shop Address',
-          invoicePrefix: 'AMW',
-          nextInvoiceSeq: 1,
-        },
-      });
-    }
-  });
+  const settingsCount = await prisma.shopSettings.count();
+  if (settingsCount === 0) {
+    await prisma.shopSettings.create({
+      data: {
+        shopName: 'Amwaj',
+        address: 'Your Shop Address',
+        phone: '',
+        invoicePrefix: 'AMW',
+        nextInvoiceSeq: 1,
+      },
+    });
+  }
 
   console.log('Seed completed successfully.');
 }

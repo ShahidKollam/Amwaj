@@ -23,7 +23,7 @@ const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
   message: { error: 'Too many login attempts, try again later' },
-});
+}); 
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'amwaj-pos', time: new Date().toISOString() });
