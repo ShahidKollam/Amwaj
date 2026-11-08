@@ -1,12 +1,23 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { api, formatINR } from '../services/api';
-import { Plus, Package, Pencil, Trash2, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import {
+  Plus, Package, Pencil, Trash2, ChevronLeft, ChevronRight, Search,
+  Droplet, SprayCan, Flame, Box,
+} from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryClient';
 import { cacheProducts } from '../lib/db';
 import { ConfirmModal } from '../components/Modal';
 
 const PAGE_SIZE = 15;
+
+const CATEGORY_ICON = {
+  Attar: Droplet,
+  Oud: Package,
+  Spray: SprayCan,
+  Bakhoor: Flame,
+  Accessories: Box,
+};
 
 const emptyForm = {
   name: '',
@@ -25,6 +36,7 @@ export default function ProductsPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [search, setSearch] = useState('');
+  const [categoryId, setCategoryId] = useState(''); // '' = all
   const [page, setPage] = useState(0);
   const [error, setError] = useState('');
   const [deleteId, setDeleteId] = useState(null);
@@ -52,28 +64,31 @@ export default function ProductsPage() {
   useEffect(load, []);
 
   const filtered = useMemo(() => {
-    const list = Array.isArray(products) ? products : [];
-    if (!search.trim()) return list;
-    const q = search.toLowerCase();
-    return list.filter(
-      (p) =>
-        (p?.name || '').toLowerCase().includes(q) ||
-        (p?.category?.name || '').toLowerCase().includes(q)
-    );
-  }, [products, search]);
+    let list = Array.isArray(products) ? products : [];
+    if (categoryId) list = list.filter((p) => p?.categoryId === categoryId);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (p) =>
+          (p?.name || '').toLowerCase().includes(q) ||
+          (p?.category?.name || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [products, search, categoryId]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageItems = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   useEffect(() => {
     setPage(0);
-  }, [search]);
+  }, [search, categoryId]);
 
   const openCreate = () => {
     setEditing(null);
     setForm({
       ...emptyForm,
-      categoryId: categories[0]?.id || '',
+      categoryId: categoryId || categories[0]?.id || '',
     });
     setShowForm(true);
   };
@@ -147,7 +162,7 @@ export default function ProductsPage() {
 
   return (
     <div className="p-4 max-w-3xl mx-auto pb-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <div>
           <h1 className="text-xl font-bold text-charcoal">Products</h1>
           <p className="text-xs text-muted">{filtered.length} items</p>
@@ -155,6 +170,51 @@ export default function ProductsPage() {
         <button onClick={openCreate} className="btn-primary flex items-center gap-1.5 text-sm py-2 px-3">
           <Plus size={16} /> Add
         </button>
+      </div>
+
+      {/* Category filter — same icon tiles as Bill */}
+      <div className="mb-3">
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+          <button
+            type="button"
+            onClick={() => setCategoryId('')}
+            className={`flex flex-col items-center justify-center gap-1 py-2 rounded-xl min-h-[58px] transition-colors ${
+              !categoryId
+                ? 'bg-emerald text-white shadow-sm'
+                : 'bg-ivory text-charcoal border border-border'
+            }`}
+          >
+            <Package size={18} className={!categoryId ? 'text-gold' : 'text-emerald'} />
+            <span className={`text-[10px] font-semibold ${!categoryId ? 'text-white' : 'text-muted'}`}>
+              All
+            </span>
+          </button>
+          {(Array.isArray(categories) ? categories : []).map((cat) => {
+            const active = categoryId === cat.id;
+            const Icon = CATEGORY_ICON[cat.name] || Package;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setCategoryId(cat.id)}
+                className={`flex flex-col items-center justify-center gap-1 py-2 px-0.5 rounded-xl min-h-[58px] transition-colors ${
+                  active
+                    ? 'bg-emerald text-white shadow-sm'
+                    : 'bg-ivory text-charcoal border border-border'
+                }`}
+              >
+                <Icon size={18} className={active ? 'text-gold' : 'text-emerald'} />
+                <span
+                  className={`text-[10px] font-semibold truncate w-full text-center px-0.5 ${
+                    active ? 'text-white' : 'text-muted'
+                  }`}
+                >
+                  {cat.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="relative mb-3">
@@ -240,7 +300,10 @@ export default function ProductsPage() {
 
       {showForm && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center p-4">
-          <form onSubmit={handleSubmit} className="bg-white rounded-3xl w-full max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+          <form
+            onSubmit={handleSubmit}
+            className="bg-white rounded-3xl w-full max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+          >
             <h3 className="font-semibold text-lg">{editing ? 'Edit Product' : 'New Product'}</h3>
             <input
               className="input"

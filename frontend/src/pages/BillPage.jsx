@@ -682,28 +682,28 @@ Thank you!`
             <p className="text-center text-muted text-sm py-10">No products found</p>
           ) : (
             <>
-              {/* Mobile: 2 products per row — aligned name, price, add */}
+              {/* Mobile: dense 2-col cards — name + price left, + right (ref) */}
               <div className="grid grid-cols-2 gap-2 md:hidden">
                 {filteredProducts.map((p) => (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => addProduct(p)}
-                    className="bg-white rounded-xl border border-border p-2.5 text-left active:scale-[0.98] transition-transform flex flex-col min-h-[72px]"
+                    className="bg-white rounded-2xl border border-[#E5E0D8] shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-3 py-2.5 text-left active:scale-[0.98] transition-transform flex items-center gap-2 min-h-[56px]"
                   >
-                    <div className="font-medium text-[13px] text-charcoal leading-snug line-clamp-2 min-h-[2rem]">
-                      {p?.name || 'Product'}
-                    </div>
-                    <div className="mt-auto pt-1.5 flex items-center justify-between gap-1">
-                      <span className="text-[11px] font-semibold text-emerald truncate">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-[13px] text-charcoal leading-tight truncate">
+                        {p?.name || 'Product'}
+                      </div>
+                      <div className="text-[12px] text-muted mt-0.5 truncate">
                         {p?.productType === 'PER_ML'
                           ? `${formatINR(p?.unitPrice)}/ml`
                           : formatINR(p?.unitPrice)}
-                      </span>
-                      <span className="w-6 h-6 rounded-full bg-emerald text-white flex items-center justify-center shrink-0">
-                        <Plus size={12} strokeWidth={2.5} />
-                      </span>
+                      </div>
                     </div>
+                    <span className="w-7 h-7 rounded-full bg-emerald text-white flex items-center justify-center shrink-0">
+                      <Plus size={14} strokeWidth={2.5} />
+                    </span>
                   </button>
                 ))}
               </div>

@@ -8,6 +8,22 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function formatDateLabel(iso) {
+  if (!iso) return 'All dates';
+  const d = new Date(iso + 'T12:00:00');
+  const today = todayISO();
+  if (iso === today) return 'Today';
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (iso === yesterday.toISOString().slice(0, 10)) return 'Yesterday';
+  return d.toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState('');
@@ -16,7 +32,8 @@ export default function CustomersPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [date, setDate] = useState(''); // empty = all dates
+  // null = all dates; otherwise YYYY-MM-DD (joined date)
+  const [date, setDate] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -50,12 +67,25 @@ export default function CustomersPage() {
     setPage(1);
   }, [search, date]);
 
+  const shiftDate = (delta) => {
+    if (!date) {
+      // Start from today when entering date mode
+      if (delta < 0) setDate(todayISO());
+      return;
+    }
+    const d = new Date(date + 'T12:00:00');
+    d.setDate(d.getDate() + delta);
+    const next = d.toISOString().slice(0, 10);
+    if (next > todayISO()) return;
+    setDate(next);
+  };
+
   return (
     <div className="p-4 max-w-3xl mx-auto pb-6">
       <h1 className="text-xl font-bold text-charcoal mb-1">Customers</h1>
       <p className="text-sm text-muted mb-3">{total} total</p>
 
-      <div className="relative mb-2">
+      <div className="relative mb-3">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={18} />
         <input
           className="input pl-10 py-2.5 text-sm"
@@ -65,27 +95,45 @@ export default function CustomersPage() {
         />
       </div>
 
-      {/* Date filter */}
-      <div className="card p-2.5 mb-3 flex items-center gap-2">
-        <Calendar size={16} className="text-muted shrink-0" />
-        <input
-          type="date"
-          className="flex-1 text-sm border-0 bg-transparent focus:outline-none text-charcoal"
-          value={date}
-          max={todayISO()}
-          onChange={(e) => setDate(e.target.value)}
-        />
-        {date ? (
-          <button
-            type="button"
-            onClick={() => setDate('')}
-            className="text-xs font-semibold text-emerald px-2 py-1"
-          >
-            All dates
-          </button>
-        ) : (
-          <span className="text-[11px] text-muted pr-1">Filter by joined date</span>
-        )}
+      {/* Date navigator — same pattern as History */}
+      <div className="card p-3 mb-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => shiftDate(-1)}
+          className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-muted active:bg-ivory"
+        >
+          <ChevronLeft size={18} />
+        </button>
+        <div className="flex-1 text-center">
+          <div className="font-semibold text-charcoal text-sm">{formatDateLabel(date)}</div>
+          <label className="inline-flex items-center gap-1 text-xs text-muted mt-0.5 cursor-pointer">
+            <Calendar size={12} />
+            <input
+              type="date"
+              value={date || ''}
+              max={todayISO()}
+              onChange={(e) => setDate(e.target.value || null)}
+              className="bg-transparent text-xs text-muted border-0 p-0 focus:outline-none"
+            />
+          </label>
+          {date && (
+            <button
+              type="button"
+              onClick={() => setDate(null)}
+              className="block mx-auto mt-1 text-[11px] font-semibold text-emerald"
+            >
+              Show all dates
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => shiftDate(1)}
+          disabled={!date || date >= todayISO()}
+          className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-muted active:bg-ivory disabled:opacity-30"
+        >
+          <ChevronRight size={18} />
+        </button>
       </div>
 
       {error && (

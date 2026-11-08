@@ -1,11 +1,13 @@
-Amwaj POS v1.3.4 (20261108)
+Amwaj POS v1.3.5 (20261108)
 
-Incremental update over v1.3.3:
-- Product edit + hard delete (API DELETE)
-- Products search + pagination
-- Customers server pagination + joined-date filter
-- History date filter + pagination (existing)
-- Bill catalog: icon-over-name category tiles, 2-col products
-- Always-on header/nav, catalog cache, offline cart
+All updates through this session:
+- Dense bill product cards (2-col, name+price, + button) per reference
+- Bill category tiles (icon top, name bottom)
+- Products: edit, hard delete, search, pagination, category icon filters
+- Customers: pagination + History-style date navigator
+- History: day filter + pagination
+- Always-on header/bottom nav, completed receipt under shell
+- Catalog cache (TanStack Query + IndexedDB), cart persist, offline bill sync
+- PostgreSQL, product DELETE API, customer date filter API
 
-PostgreSQL only. Login: admin / amwaj2024
+Login: admin / amwaj2024
