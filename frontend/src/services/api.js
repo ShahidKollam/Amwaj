@@ -43,6 +43,15 @@ export const api = {
     }),
 
   me: () => request('/auth/me'),
+  changePassword: (currentPassword, newPassword) =>
+    request('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  getUsers: () => request('/auth/users'),
+  createStaff: (data) =>
+    request('/auth/users', { method: 'POST', body: JSON.stringify(data) }),
+
 
   getCategories: () => request('/products/categories'),
   getProducts: (params = {}) => {

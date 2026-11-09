@@ -1,26 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api, formatINR } from '../services/api';
-import { Search, FileText, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
+import { Search, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import DayFilter, { todayISO } from '../components/DayFilter';
 import Modal from '../components/Modal';
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function formatDateLabel(iso) {
-  const d = new Date(iso + 'T12:00:00');
-  const today = todayISO();
-  if (iso === today) return 'Today';
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (iso === yesterday.toISOString().slice(0, 10)) return 'Yesterday';
-  return d.toLocaleDateString('en-IN', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}
+import { getWhatsAppShareUrl } from '../utils/whatsapp';
 
 const PAGE_SIZE = 20;
 
@@ -75,14 +58,6 @@ export default function HistoryPage() {
     }
   };
 
-  const shiftDate = (delta) => {
-    const d = new Date(date + 'T12:00:00');
-    d.setDate(d.getDate() + delta);
-    const next = d.toISOString().slice(0, 10);
-    if (next > todayISO()) return;
-    setDate(next);
-  };
-
   const pageItems = invoices.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(invoices.length / PAGE_SIZE));
 
@@ -90,35 +65,7 @@ export default function HistoryPage() {
     <div className="p-4 max-w-3xl mx-auto pb-6">
       <h1 className="text-xl font-bold text-charcoal mb-4">History</h1>
 
-      {/* Date navigator */}
-      <div className="card p-3 mb-3 flex items-center gap-2">
-        <button
-          onClick={() => shiftDate(-1)}
-          className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-muted active:bg-ivory"
-        >
-          <ChevronLeft size={18} />
-        </button>
-        <div className="flex-1 text-center">
-          <div className="font-semibold text-charcoal text-sm">{formatDateLabel(date)}</div>
-          <label className="inline-flex items-center gap-1 text-xs text-muted mt-0.5 cursor-pointer">
-            <Calendar size={12} />
-            <input
-              type="date"
-              value={date}
-              max={todayISO()}
-              onChange={(e) => setDate(e.target.value)}
-              className="bg-transparent text-xs text-muted border-0 p-0 focus:outline-none"
-            />
-          </label>
-        </div>
-        <button
-          onClick={() => shiftDate(1)}
-          disabled={date >= todayISO()}
-          className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-muted active:bg-ivory disabled:opacity-30"
-        >
-          <ChevronRight size={18} />
-        </button>
-      </div>
+      <DayFilter value={date} onChange={setDate} hint="Bills for this day" />
 
       {/* Day summary */}
       <div className="grid grid-cols-2 gap-2 mb-4">
@@ -215,14 +162,12 @@ export default function HistoryPage() {
         footer={
           selected && (
             <a
-              href={`https://wa.me/?text=${encodeURIComponent(
-                `*Amwaj Invoice ${selected.invoiceNumber}*\nTotal: ${formatINR(selected.totalPaise)}\nThank you!`
-              )}`}
+              href={getWhatsAppShareUrl(selected, 'Amwaj')}
               target="_blank"
               rel="noreferrer"
               className="btn-primary w-full text-center block"
             >
-              Share on WhatsApp
+              {selected.customer?.mobile ? 'Send on WhatsApp' : 'Share on WhatsApp'}
             </a>
           )
         }

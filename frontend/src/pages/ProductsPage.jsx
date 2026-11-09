@@ -47,10 +47,12 @@ export default function ProductsPage() {
     setError('');
     Promise.all([api.getProducts({ active: 'false' }), api.getCategories()])
       .then(([p, c]) => {
+        const cats = Array.isArray(c) ? c : [];
         setProducts(Array.isArray(p) ? p : []);
-        setCategories(Array.isArray(c) ? c : []);
-        if (Array.isArray(c) && c[0] && !form.categoryId) {
-          setForm((f) => ({ ...f, categoryId: c[0].id }));
+        setCategories(cats);
+        if (cats[0]) {
+          setCategoryId((prev) => prev || cats[0].id);
+          setForm((f) => ({ ...f, categoryId: f.categoryId || cats[0].id }));
         }
       })
       .catch((err) => {
@@ -172,23 +174,9 @@ export default function ProductsPage() {
         </button>
       </div>
 
-      {/* Category filter — same icon tiles as Bill */}
-      <div className="mb-3">
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-          <button
-            type="button"
-            onClick={() => setCategoryId('')}
-            className={`flex flex-col items-center justify-center gap-1 py-2 rounded-xl min-h-[58px] transition-colors ${
-              !categoryId
-                ? 'bg-emerald text-white shadow-sm'
-                : 'bg-ivory text-charcoal border border-border'
-            }`}
-          >
-            <Package size={18} className={!categoryId ? 'text-gold' : 'text-emerald'} />
-            <span className={`text-[10px] font-semibold ${!categoryId ? 'text-white' : 'text-muted'}`}>
-              All
-            </span>
-          </button>
+      {/* Categories — same one-line tiles as Bill (icon top, name below) */}
+      <div className="mb-3 px-0 py-0">
+        <div className="grid grid-cols-5 gap-1.5">
           {(Array.isArray(categories) ? categories : []).map((cat) => {
             const active = categoryId === cat.id;
             const Icon = CATEGORY_ICON[cat.name] || Package;
@@ -197,15 +185,19 @@ export default function ProductsPage() {
                 key={cat.id}
                 type="button"
                 onClick={() => setCategoryId(cat.id)}
-                className={`flex flex-col items-center justify-center gap-1 py-2 px-0.5 rounded-xl min-h-[58px] transition-colors ${
+                className={`flex flex-col items-center justify-center gap-1 py-2 px-0.5 rounded-xl transition-colors min-h-[58px] ${
                   active
                     ? 'bg-emerald text-white shadow-sm'
                     : 'bg-ivory text-charcoal border border-border'
                 }`}
               >
-                <Icon size={18} className={active ? 'text-gold' : 'text-emerald'} />
+                <Icon
+                  size={18}
+                  strokeWidth={2}
+                  className={active ? 'text-gold' : 'text-emerald'}
+                />
                 <span
-                  className={`text-[10px] font-semibold truncate w-full text-center px-0.5 ${
+                  className={`text-[10px] font-semibold leading-tight text-center truncate w-full px-0.5 ${
                     active ? 'text-white' : 'text-muted'
                   }`}
                 >

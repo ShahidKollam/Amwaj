@@ -1,13 +1,13 @@
-Amwaj POS v1.3.5 (20261108)
+Amwaj POS v1 (updated)
 
-All updates through this session:
-- Dense bill product cards (2-col, name+price, + button) per reference
-- Bill category tiles (icon top, name bottom)
-- Products: edit, hard delete, search, pagination, category icon filters
-- Customers: pagination + History-style date navigator
-- History: day filter + pagination
-- Always-on header/bottom nav, completed receipt under shell
-- Catalog cache (TanStack Query + IndexedDB), cart persist, offline bill sync
-- PostgreSQL, product DELETE API, customer date filter API
+Includes all current features:
+- Bill: dense cards, category tiles, same-item qty (+3ml / +1)
+- WhatsApp: opens customer chat with full invoice text
+- Receipt design improved
+- Products: edit, hard delete, category tiles, pagination
+- Customers/History: shared DayFilter date navigator
+- Settings: reports (owner, date range), staff create (owner), change password
+- Staff cannot see Reports
+- PostgreSQL, TanStack Query + IndexedDB, cart persist, offline bill sync
 
 Login: admin / amwaj2024

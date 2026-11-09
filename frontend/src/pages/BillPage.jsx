@@ -10,6 +10,7 @@ import Modal, { ConfirmModal } from '../components/Modal';
 import { useProducts, useCategories } from '../hooks/useCatalog';
 import { useCartStore } from '../store/cartStore';
 import { completeBillSafe } from '../lib/billSync';
+import { getWhatsAppShareUrl } from '../utils/whatsapp';
 
 const CATEGORY_ICON = {
   Attar: Droplet,
@@ -130,56 +131,77 @@ export default function BillPage() {
   const totalPaise = Math.max(0, subtotalPaise + additionalPaise - discountPaise);
 
   const addProduct = (product) => {
-    if (product.productType === 'PER_ML') {
-      const qty = 3;
-      const lineTotal = Math.round(qty * product.unitPrice);
-      setCart((prev) => [
+    // Same product: increase qty on one line (do not add duplicate rows)
+    // PER_ML: +3 ml each click (3 → 6 → 9 …). Piece/Spray/Fixed: +1 each click.
+    setCart((prev) => {
+      const existing = prev.find((i) => i.productId === product.id);
+      if (existing) {
+        const step = product.productType === 'PER_ML' ? 3 : 1;
+        return prev.map((item) => {
+          if (item.productId !== product.id) return item;
+          const quantity = item.quantity + step;
+          const lineTotal =
+            Math.round(quantity * item.unitPricePaise) - (item.discountPaise || 0);
+          return {
+            ...item,
+            quantity,
+            lineTotalPaise: Math.max(0, lineTotal),
+          };
+        });
+      }
+
+      if (product.productType === 'PER_ML') {
+        const quantity = 3;
+        return [
+          ...prev,
+          {
+            key: `${product.id}`,
+            productId: product.id,
+            productName: product.name,
+            productType: product.productType,
+            unit: product.unit,
+            quantity,
+            unitPricePaise: product.unitPrice,
+            lineTotalPaise: Math.round(quantity * product.unitPrice),
+            discountPaise: 0,
+          },
+        ];
+      }
+
+      if (product.productType === 'SPRAY') {
+        return [
+          ...prev,
+          {
+            key: `${product.id}`,
+            productId: product.id,
+            productName: product.name,
+            productType: 'SPRAY',
+            unit: 'piece',
+            quantity: 1,
+            unitPricePaise: product.unitPrice,
+            lineTotalPaise: product.unitPrice,
+            discountPaise: 0,
+            sprayBottleMl: 100,
+            sprayOilMl: 60,
+          },
+        ];
+      }
+
+      return [
         ...prev,
         {
-          key: `${product.id}-${Date.now()}`,
+          key: `${product.id}`,
           productId: product.id,
           productName: product.name,
           productType: product.productType,
           unit: product.unit,
-          quantity: qty,
-          unitPricePaise: product.unitPrice,
-          lineTotalPaise: lineTotal,
-          discountPaise: 0,
-        },
-      ]);
-    } else if (product.productType === 'SPRAY') {
-      setCart((prev) => [
-        ...prev,
-        {
-          key: `${product.id}-${Date.now()}`,
-          productId: product.id,
-          productName: product.name,
-          productType: 'SPRAY',
-          unit: 'piece',
-          quantity: 1,
-          unitPricePaise: product.unitPrice,
-          lineTotalPaise: product.unitPrice,
-          discountPaise: 0,
-          sprayBottleMl: 100,
-          sprayOilMl: 60,
-        },
-      ]);
-    } else {
-      setCart((prev) => [
-        ...prev,
-        {
-          key: `${product.id}-${Date.now()}`,
-          productId: product.id,
-          productName: product.name,
-          productType: product.productType,
-          unit: product.unit,
           quantity: 1,
           unitPricePaise: product.unitPrice,
           lineTotalPaise: product.unitPrice,
           discountPaise: 0,
         },
-      ]);
-    }
+      ];
+    });
   };
 
   const updateQty = (key, delta) => {
@@ -329,64 +351,114 @@ export default function BillPage() {
 
   // ── Completed invoice (stays inside AppShell header + bottom nav) ──
   if (completedInvoice) {
+    const waUrl = getWhatsAppShareUrl(completedInvoice, 'Amwaj');
+    const hasCustomerMobile = !!(completedInvoice.customer?.mobile);
     return (
       <div className="bg-ivory px-3 pt-3 pb-6 max-w-lg mx-auto">
         <div className="rounded-2xl bg-white border border-border shadow-soft overflow-hidden">
-          <div className="bg-emerald px-4 py-3 flex items-center justify-between">
-            <div>
-              <p className="text-white/70 text-[11px] font-medium uppercase tracking-wide">Receipt</p>
-              <p className="text-white font-semibold text-sm">{completedInvoice.invoiceNumber}</p>
-            </div>
-            <div className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center">
-              <Check className="text-gold" size={20} strokeWidth={2.5} />
-            </div>
-          </div>
-          <div className="px-4 pt-4 pb-2 text-center border-b border-border">
-            <p className="text-[11px] text-muted font-medium">Total paid</p>
-            <p className="text-2xl font-bold text-emerald tracking-tight mt-0.5">
-              {formatINR(completedInvoice.totalPaise)}
-            </p>
-            {completedInvoice.customer && (
-              <p className="text-xs text-muted mt-1.5">
-                {completedInvoice.customer?.name}
-                {completedInvoice.customer?.mobile ? ` · ${completedInvoice.customer.mobile}` : ''}
+          {/* Shop header */}
+          <div className="bg-emerald px-4 py-4 text-center">
+            <p className="text-gold text-[10px] font-bold tracking-[0.2em] uppercase">Amwaj</p>
+            <p className="text-white font-semibold text-base mt-0.5">Tax Invoice / Receipt</p>
+            <p className="text-white/75 text-xs mt-1">{completedInvoice.invoiceNumber}</p>
+            {completedInvoice.createdAt && (
+              <p className="text-white/55 text-[11px] mt-0.5">
+                {new Date(completedInvoice.createdAt).toLocaleString('en-IN', {
+                  day: '2-digit', month: 'short', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit',
+                })}
               </p>
             )}
           </div>
-          <div className="px-4 py-3 space-y-1.5 max-h-48 overflow-y-auto">
-            {(completedInvoice.items || []).map((it) => (
-              <div key={it.id || it.productName} className="flex justify-between gap-2 text-sm">
-                <span className="truncate text-charcoal">
-                  {it.productName}
-                  {it.productType === 'PER_ML' ? ` · ${it.quantity} ml` : ''}
-                </span>
-                <span className="shrink-0 font-semibold text-charcoal">
-                  {formatINR(it.lineTotalPaise)}
-                </span>
+
+          {/* Customer */}
+          {(completedInvoice.customer?.name || completedInvoice.customer?.mobile) && (
+            <div className="px-4 py-3 border-b border-border bg-ivory/50">
+              <p className="text-[10px] uppercase tracking-wide text-muted font-semibold">Customer</p>
+              <p className="text-sm font-semibold text-charcoal mt-0.5">
+                {completedInvoice.customer?.name || '—'}
+              </p>
+              {completedInvoice.customer?.mobile && (
+                <p className="text-xs text-muted">{completedInvoice.customer.mobile}</p>
+              )}
+            </div>
+          )}
+
+          {/* Items — this bill only */}
+          <div className="px-4 py-3">
+            <div className="flex justify-between text-[10px] uppercase tracking-wide text-muted font-semibold mb-2">
+              <span>Item</span>
+              <span>Amount</span>
+            </div>
+            <div className="space-y-2.5 max-h-52 overflow-y-auto">
+              {(completedInvoice.items || []).map((it) => (
+                <div key={it.id || it.productName} className="flex justify-between gap-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-medium text-charcoal truncate">{it.productName}</p>
+                    <p className="text-[11px] text-muted">
+                      {it.productType === 'PER_ML'
+                        ? `${it.quantity} ml × ${formatINR(it.unitPricePaise)}/ml`
+                        : `${it.quantity} × ${formatINR(it.unitPricePaise)}`}
+                    </p>
+                  </div>
+                  <span className="shrink-0 font-semibold text-charcoal">
+                    {formatINR(it.lineTotalPaise)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Totals */}
+          <div className="px-4 py-3 border-t border-border space-y-1 text-sm">
+            {completedInvoice.subtotalPaise != null && (
+              <div className="flex justify-between text-muted">
+                <span>Subtotal</span>
+                <span>{formatINR(completedInvoice.subtotalPaise)}</span>
               </div>
-            ))}
+            )}
+            {(completedInvoice.additionalPaise || 0) > 0 && (
+              <div className="flex justify-between text-muted">
+                <span>Additional</span>
+                <span>{formatINR(completedInvoice.additionalPaise)}</span>
+              </div>
+            )}
+            {(completedInvoice.discountPaise || 0) > 0 && (
+              <div className="flex justify-between text-muted">
+                <span>Discount</span>
+                <span>-{formatINR(completedInvoice.discountPaise)}</span>
+              </div>
+            )}
+            <div className="flex justify-between items-center pt-2 border-t border-border">
+              <span className="font-bold text-charcoal">Total</span>
+              <span className="text-xl font-bold text-emerald">
+                {formatINR(completedInvoice.totalPaise)}
+              </span>
+            </div>
+            <div className="text-[11px] text-muted pt-1">
+              Paid:{' '}
+              <span className="text-charcoal font-medium">
+                {(completedInvoice.payments || [])
+                  .map((p) => `${p.method} ${formatINR(p.amountPaise)}`)
+                  .join(' + ') || '—'}
+              </span>
+            </div>
           </div>
-          <div className="px-4 py-2.5 bg-ivory/80 border-t border-border text-[11px] text-muted">
-            Paid:{' '}
-            <span className="text-charcoal font-medium">
-              {(completedInvoice.payments || [])
-                .map((p) => `${p.method} ${formatINR(p.amountPaise)}`)
-                .join(' + ') || '—'}
-            </span>
-          </div>
-          <div className="p-3 space-y-2">
+
+          <div className="p-3 space-y-2 border-t border-border bg-ivory/40">
             <a
-              href={`https://wa.me/?text=${encodeURIComponent(
-                `*Amwaj Invoice ${completedInvoice.invoiceNumber}
-Total: ${formatINR(completedInvoice.totalPaise)}
-Thank you!`
-              )}`}
+              href={waUrl}
               target="_blank"
               rel="noreferrer"
               className="btn-primary w-full text-center text-sm py-2.5 block"
             >
-              Share on WhatsApp
+              {hasCustomerMobile ? 'Send on WhatsApp' : 'Share on WhatsApp'}
             </a>
+            {!hasCustomerMobile && (
+              <p className="text-[11px] text-center text-muted px-2">
+                No customer mobile on this bill — WhatsApp will open with the message; pick a contact to send.
+              </p>
+            )}
             <button
               onClick={startNewBill}
               className="w-full py-2.5 rounded-xl border border-border text-sm font-semibold text-charcoal active:bg-ivory"

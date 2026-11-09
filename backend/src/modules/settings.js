@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../utils/prisma.js';
-import { requireAuth } from '../middlewares/auth.js';
+import { requireAuth, requireOwner } from '../middlewares/auth.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -47,15 +47,23 @@ router.put('/', async (req, res, next) => {
   }
 });
 
-// Basic reports
-router.get('/reports/sales', async (req, res, next) => {
+// Basic reports — owner only
+router.get('/reports/sales', requireOwner, async (req, res, next) => {
   try {
     const { from, to } = req.query;
     const where = { status: 'COMPLETED' };
     if (from || to) {
       where.createdAt = {};
-      if (from) where.createdAt.gte = new Date(from);
-      if (to) where.createdAt.lte = new Date(to);
+      if (from) {
+        const start = new Date(from);
+        start.setHours(0, 0, 0, 0);
+        where.createdAt.gte = start;
+      }
+      if (to) {
+        const end = new Date(to);
+        end.setHours(23, 59, 59, 999);
+        where.createdAt.lte = end;
+      }
     }
 
     const invoices = await prisma.invoice.findMany({

@@ -3,48 +3,88 @@ import { api, formatINR } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
   LogOut, BarChart3, Store, ChevronRight, ChevronLeft,
-  User, Shield
+  User, Users, KeyRound, Calendar,
 } from 'lucide-react';
-
-const MENU = [
-  { id: 'shop', label: 'Shop Profile', desc: 'Name, address, invoice prefix', icon: Store },
-  { id: 'reports', label: 'Reports', desc: 'Sales totals & top items', icon: BarChart3 },
-  { id: 'account', label: 'Account', desc: 'Logged-in staff & sign out', icon: User },
-];
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function BackHeader({ title, onBack }) {
+  return (
+    <div className="flex items-center gap-2 mb-4">
+      <button
+        type="button"
+        onClick={onBack}
+        className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-muted active:bg-ivory"
+      >
+        <ChevronLeft size={18} />
+      </button>
+      <h2 className="text-lg font-bold text-charcoal">{title}</h2>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { user, logout } = useAuth();
-  const [section, setSection] = useState(null); // null = menu list
+  const isOwner = user?.role === 'OWNER';
+  const [section, setSection] = useState(null);
   const [settings, setSettings] = useState(null);
   const [report, setReport] = useState(null);
-  const [reportDate, setReportDate] = useState(todayISO());
+  const [fromDate, setFromDate] = useState(todayISO());
+  const [toDate, setToDate] = useState(todayISO());
   const [saving, setSaving] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [toast, setToast] = useState('');
+  const [staffList, setStaffList] = useState([]);
+  const [staffForm, setStaffForm] = useState({ name: '', username: '', password: '' });
+  const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
+  const [busy, setBusy] = useState(false);
+
+  const menu = [
+    { id: 'shop', label: 'Shop Profile', desc: 'Name, address, invoice prefix', icon: Store },
+    ...(isOwner
+      ? [{ id: 'reports', label: 'Reports', desc: 'Sales by date range', icon: BarChart3 }]
+      : []),
+    ...(isOwner
+      ? [{ id: 'staff', label: 'Staff accounts', desc: 'Create staff login', icon: Users }]
+      : []),
+    { id: 'account', label: 'Account', desc: 'Password & sign out', icon: User },
+  ];
 
   useEffect(() => {
     api.getSettings().then(setSettings).catch(console.error);
   }, []);
 
   useEffect(() => {
-    if (section !== 'reports') return;
+    if (section !== 'reports' || !isOwner) return;
     setLoadingReport(true);
-    api.getSalesReport({ from: reportDate, to: reportDate })
+    api
+      .getSalesReport({ from: fromDate, to: toDate })
       .then(setReport)
-      .catch(console.error)
+      .catch((err) => {
+        console.error(err);
+        setReport(null);
+        setToast(err.message || 'Could not load report');
+        setTimeout(() => setToast(''), 3000);
+      })
       .finally(() => setLoadingReport(false));
-  }, [section, reportDate]);
+  }, [section, fromDate, toDate, isOwner]);
 
-  const save = async () => {
+  useEffect(() => {
+    if (section !== 'staff' || !isOwner) return;
+    api
+      .getUsers()
+      .then((list) => setStaffList(Array.isArray(list) ? list : []))
+      .catch(console.error);
+  }, [section, isOwner]);
+
+  const saveShop = async () => {
     setSaving(true);
     try {
       const updated = await api.updateSettings(settings);
       setSettings(updated);
-      setToast('Saved successfully');
+      setToast('Saved');
       setTimeout(() => setToast(''), 2000);
     } catch (err) {
       setToast(err.message || 'Save failed');
@@ -54,17 +94,73 @@ export default function SettingsPage() {
     }
   };
 
-  // ── Menu list ──────────────────────────────────────────
+  const createStaff = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const created = await api.createStaff(staffForm);
+      setStaffList((prev) => [...prev, created]);
+      setStaffForm({ name: '', username: '', password: '' });
+      setToast('Staff account created');
+      setTimeout(() => setToast(''), 2000);
+    } catch (err) {
+      setToast(err.message || 'Could not create staff');
+      setTimeout(() => setToast(''), 3000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changePassword = async (e) => {
+    e.preventDefault();
+    if (pwdForm.newPassword !== pwdForm.confirm) {
+      setToast('New passwords do not match');
+      setTimeout(() => setToast(''), 3000);
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.changePassword(pwdForm.currentPassword, pwdForm.newPassword);
+      setPwdForm({ currentPassword: '', newPassword: '', confirm: '' });
+      setToast('Password updated');
+      setTimeout(() => setToast(''), 2000);
+    } catch (err) {
+      setToast(err.message || 'Could not change password');
+      setTimeout(() => setToast(''), 3000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setPreset = (preset) => {
+    const today = todayISO();
+    if (preset === 'today') {
+      setFromDate(today);
+      setToDate(today);
+    } else if (preset === 'week') {
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      setFromDate(d.toISOString().slice(0, 10));
+      setToDate(today);
+    } else if (preset === 'month') {
+      const d = new Date();
+      d.setDate(1);
+      setFromDate(d.toISOString().slice(0, 10));
+      setToDate(today);
+    }
+  };
+
+  // ── Menu ───────────────────────────────────────────────
   if (!section) {
     return (
-      <div className="p-4 max-w-lg mx-auto">
+      <div className="p-4 max-w-lg mx-auto pb-6">
         <h1 className="text-xl font-bold text-charcoal mb-1">Settings</h1>
         <p className="text-sm text-muted mb-5">Choose a section</p>
-
         <div className="space-y-2">
-          {MENU.map(({ id, label, desc, icon: Icon }) => (
+          {menu.map(({ id, label, desc, icon: Icon }) => (
             <button
               key={id}
+              type="button"
               onClick={() => setSection(id)}
               className="card w-full flex items-center gap-3 p-4 text-left active:scale-[0.99] transition-transform"
             >
@@ -72,46 +168,31 @@ export default function SettingsPage() {
                 <Icon size={20} />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-semibold text-charcoal">{label}</div>
+                <div className="font-semibold text-charcoal text-sm">{label}</div>
                 <div className="text-xs text-muted truncate">{desc}</div>
               </div>
               <ChevronRight size={18} className="text-muted shrink-0" />
             </button>
           ))}
         </div>
-
-        <div className="mt-8 text-center text-xs text-muted flex items-center justify-center gap-1.5">
-          <Shield size={12} />
-          Internal staff access only · Amwaj POS
-        </div>
+        {toast && (
+          <p className="mt-4 text-center text-sm text-emerald font-medium">{toast}</p>
+        )}
       </div>
     );
   }
 
-  // ── Shared back header ─────────────────────────────────
-  const BackHeader = ({ title }) => (
-    <div className="flex items-center gap-2 mb-5">
-      <button
-        onClick={() => setSection(null)}
-        className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-muted active:bg-ivory"
-      >
-        <ChevronLeft size={18} />
-      </button>
-      <h1 className="text-xl font-bold text-charcoal">{title}</h1>
-    </div>
-  );
-
-  // ── Shop Profile ───────────────────────────────────────
+  // ── Shop ───────────────────────────────────────────────
   if (section === 'shop') {
     return (
-      <div className="p-4 max-w-lg mx-auto">
-        <BackHeader title="Shop Profile" />
+      <div className="p-4 max-w-lg mx-auto pb-6">
+        <BackHeader title="Shop Profile" onBack={() => setSection(null)} />
         {settings ? (
           <div className="card p-4 space-y-3">
             <div>
-              <label className="text-xs text-muted font-medium">Shop Name</label>
+              <label className="text-xs text-muted font-medium">Shop name</label>
               <input
-                className="input mt-1"
+                className="input mt-1 py-2.5 text-sm"
                 value={settings.shopName || ''}
                 onChange={(e) => setSettings({ ...settings, shopName: e.target.value })}
               />
@@ -119,7 +200,7 @@ export default function SettingsPage() {
             <div>
               <label className="text-xs text-muted font-medium">Address</label>
               <input
-                className="input mt-1"
+                className="input mt-1 py-2.5 text-sm"
                 value={settings.address || ''}
                 onChange={(e) => setSettings({ ...settings, address: e.target.value })}
               />
@@ -127,93 +208,208 @@ export default function SettingsPage() {
             <div>
               <label className="text-xs text-muted font-medium">Phone</label>
               <input
-                className="input mt-1"
+                className="input mt-1 py-2.5 text-sm"
                 value={settings.phone || ''}
                 onChange={(e) => setSettings({ ...settings, phone: e.target.value })}
               />
             </div>
             <div>
-              <label className="text-xs text-muted font-medium">Invoice Prefix</label>
+              <label className="text-xs text-muted font-medium">Invoice prefix</label>
               <input
-                className="input mt-1"
+                className="input mt-1 py-2.5 text-sm"
                 value={settings.invoicePrefix || ''}
                 onChange={(e) => setSettings({ ...settings, invoicePrefix: e.target.value })}
               />
             </div>
-            <button onClick={save} disabled={saving} className="btn-primary w-full mt-2">
-              {saving ? 'Saving…' : 'Save Changes'}
+            <button type="button" onClick={saveShop} disabled={saving} className="btn-primary w-full py-2.5 text-sm">
+              {saving ? 'Saving…' : 'Save'}
             </button>
-            {toast && (
-              <p className="text-center text-sm text-emerald font-medium pt-2">{toast}</p>
-            )}
+            {toast && <p className="text-center text-sm text-emerald font-medium">{toast}</p>}
           </div>
         ) : (
-          <div className="card p-8 text-center text-muted text-sm">Loading…</div>
+          <p className="text-sm text-muted">Loading…</p>
         )}
       </div>
     );
   }
 
-  // ── Reports ────────────────────────────────────────────
+  // ── Reports (owner only) ───────────────────────────────
   if (section === 'reports') {
+    if (!isOwner) {
+      return (
+        <div className="p-4 max-w-lg mx-auto">
+          <BackHeader title="Reports" onBack={() => setSection(null)} />
+          <p className="text-sm text-muted">Reports are only available to the owner.</p>
+        </div>
+      );
+    }
     return (
-      <div className="p-4 max-w-lg mx-auto">
-        <BackHeader title="Reports" />
+      <div className="p-4 max-w-lg mx-auto pb-6">
+        <BackHeader title="Reports" onBack={() => setSection(null)} />
 
-        <div className="mb-4">
-          <label className="text-xs text-muted font-medium">Date</label>
-          <input
-            type="date"
-            className="input mt-1"
-            value={reportDate}
-            onChange={(e) => setReportDate(e.target.value)}
-            max={todayISO()}
-          />
+        {/* Date range */}
+        <div className="card p-3 mb-3 space-y-3">
+          <div className="flex gap-2">
+            {['today', 'week', 'month'].map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPreset(p)}
+                className="flex-1 text-xs font-semibold py-2 rounded-xl border border-border text-charcoal active:bg-ivory capitalize"
+              >
+                {p === 'today' ? 'Today' : p === 'week' ? '7 days' : 'This month'}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] uppercase tracking-wide text-muted font-semibold flex items-center gap-1">
+                <Calendar size={11} /> From
+              </label>
+              <input
+                type="date"
+                className="input mt-1 py-2 text-sm"
+                value={fromDate}
+                max={toDate}
+                onChange={(e) => setFromDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wide text-muted font-semibold flex items-center gap-1">
+                <Calendar size={11} /> To
+              </label>
+              <input
+                type="date"
+                className="input mt-1 py-2 text-sm"
+                value={toDate}
+                min={fromDate}
+                max={todayISO()}
+                onChange={(e) => setToDate(e.target.value)}
+              />
+            </div>
+          </div>
         </div>
 
         {loadingReport ? (
-          <div className="card p-8 text-center text-muted text-sm">Loading report…</div>
+          <p className="text-sm text-muted text-center py-8">Loading report…</p>
         ) : report ? (
-          <div className="card p-4 space-y-3">
-            <div className="flex justify-between items-baseline">
-              <span className="text-muted text-sm">Total Sales</span>
-              <span className="text-2xl font-bold text-emerald">{formatINR(report.totalSalesPaise)}</span>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="card p-3 text-center">
+                <p className="text-[10px] uppercase text-muted font-semibold">Total sales</p>
+                <p className="text-xl font-bold text-emerald mt-1">
+                  {formatINR(report.totalSalesPaise)}
+                </p>
+              </div>
+              <div className="card p-3 text-center">
+                <p className="text-[10px] uppercase text-muted font-semibold">Bills</p>
+                <p className="text-xl font-bold text-charcoal mt-1">{report.billCount}</p>
+              </div>
+              <div className="card p-3 text-center">
+                <p className="text-[10px] uppercase text-muted font-semibold">Avg bill</p>
+                <p className="text-lg font-bold text-charcoal mt-1">
+                  {formatINR(report.averageBillPaise)}
+                </p>
+              </div>
+              <div className="card p-3 text-center">
+                <p className="text-[10px] uppercase text-muted font-semibold">Cash / UPI</p>
+                <p className="text-xs font-semibold text-charcoal mt-1.5 leading-relaxed">
+                  {formatINR(report.byPaymentMethod?.CASH || 0)}
+                  <br />
+                  {formatINR(report.byPaymentMethod?.UPI || 0)}
+                </p>
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border">
-              <div className="bg-ivory rounded-xl p-3 text-center">
-                <div className="text-lg font-semibold">{report.billCount}</div>
-                <div className="text-xs text-muted">Bills</div>
-              </div>
-              <div className="bg-ivory rounded-xl p-3 text-center">
-                <div className="text-lg font-semibold">{formatINR(report.averageBillPaise)}</div>
-                <div className="text-xs text-muted">Avg Bill</div>
-              </div>
-            </div>
-            <div className="pt-2 border-t border-border space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted">Cash</span>
-                <span className="font-medium">{formatINR(report.byPaymentMethod?.CASH || 0)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">UPI</span>
-                <span className="font-medium">{formatINR(report.byPaymentMethod?.UPI || 0)}</span>
-              </div>
-            </div>
-            {report.topItems?.length > 0 && (
-              <div className="pt-3 border-t border-border">
-                <p className="text-xs text-muted font-medium mb-2">Top items</p>
-                {report.topItems.slice(0, 8).map((it) => (
-                  <div key={it.name} className="flex justify-between text-sm py-1">
-                    <span className="truncate pr-2">{it.name}</span>
-                    <span className="text-muted shrink-0">{formatINR(it.revenue)}</span>
-                  </div>
-                ))}
+
+            {(report.topItems || []).length > 0 && (
+              <div className="card p-3">
+                <p className="text-[10px] uppercase text-muted font-semibold mb-2">Top items</p>
+                <div className="space-y-2">
+                  {report.topItems.slice(0, 8).map((it) => (
+                    <div key={it.name} className="flex justify-between gap-2 text-sm">
+                      <span className="truncate text-charcoal">{it.name}</span>
+                      <span className="shrink-0 font-semibold text-emerald">
+                        {formatINR(it.revenue)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         ) : (
-          <div className="card p-8 text-center text-muted text-sm">No data for this date</div>
+          <div className="card p-8 text-center text-muted text-sm">No data for this range</div>
         )}
+        {toast && <p className="mt-3 text-center text-sm text-red-600">{toast}</p>}
+      </div>
+    );
+  }
+
+  // ── Staff (owner only) ─────────────────────────────────
+  if (section === 'staff') {
+    if (!isOwner) {
+      return (
+        <div className="p-4 max-w-lg mx-auto">
+          <BackHeader title="Staff" onBack={() => setSection(null)} />
+          <p className="text-sm text-muted">Only the owner can manage staff.</p>
+        </div>
+      );
+    }
+    return (
+      <div className="p-4 max-w-lg mx-auto pb-6">
+        <BackHeader title="Staff accounts" onBack={() => setSection(null)} />
+
+        <form onSubmit={createStaff} className="card p-4 space-y-3 mb-4">
+          <p className="text-sm font-semibold text-charcoal">Create staff</p>
+          <input
+            className="input py-2.5 text-sm"
+            placeholder="Display name"
+            value={staffForm.name}
+            onChange={(e) => setStaffForm({ ...staffForm, name: e.target.value })}
+            required
+          />
+          <input
+            className="input py-2.5 text-sm"
+            placeholder="Username"
+            value={staffForm.username}
+            onChange={(e) => setStaffForm({ ...staffForm, username: e.target.value })}
+            required
+            autoCapitalize="none"
+          />
+          <input
+            className="input py-2.5 text-sm"
+            type="password"
+            placeholder="Password"
+            value={staffForm.password}
+            onChange={(e) => setStaffForm({ ...staffForm, password: e.target.value })}
+            required
+            minLength={4}
+          />
+          <button type="submit" disabled={busy} className="btn-primary w-full py-2.5 text-sm">
+            {busy ? 'Creating…' : 'Create staff login'}
+          </button>
+        </form>
+
+        <div className="space-y-2">
+          <p className="text-xs text-muted font-semibold uppercase tracking-wide px-1">Accounts</p>
+          {staffList.map((u) => (
+            <div key={u.id} className="card p-3 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-emerald/10 flex items-center justify-center text-emerald font-bold text-sm">
+                {(u.name || u.username || '?')[0].toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm truncate">{u.name}</div>
+                <div className="text-xs text-muted">
+                  @{u.username} · {u.role}
+                </div>
+              </div>
+            </div>
+          ))}
+          {staffList.length === 0 && (
+            <p className="text-sm text-muted text-center py-4">No accounts loaded</p>
+          )}
+        </div>
+        {toast && <p className="mt-3 text-center text-sm text-emerald font-medium">{toast}</p>}
       </div>
     );
   }
@@ -221,25 +417,65 @@ export default function SettingsPage() {
   // ── Account ────────────────────────────────────────────
   if (section === 'account') {
     return (
-      <div className="p-4 max-w-lg mx-auto">
-        <BackHeader title="Account" />
-        <div className="card p-4 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-emerald/10 flex items-center justify-center text-emerald font-bold text-lg">
-              {(user?.name || 'A')[0].toUpperCase()}
-            </div>
-            <div>
-              <div className="font-semibold">{user?.name}</div>
-              <div className="text-sm text-muted">{user?.role} · @{user?.username}</div>
+      <div className="p-4 max-w-lg mx-auto pb-6">
+        <BackHeader title="Account" onBack={() => setSection(null)} />
+
+        <div className="card p-4 mb-3 flex items-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-emerald/10 flex items-center justify-center text-emerald font-bold text-lg">
+            {(user?.name || 'A')[0].toUpperCase()}
+          </div>
+          <div>
+            <div className="font-semibold">{user?.name}</div>
+            <div className="text-sm text-muted">
+              {user?.role} · @{user?.username}
             </div>
           </div>
-          <button
-            onClick={logout}
-            className="w-full flex items-center justify-center gap-2 text-red-600 font-medium border border-red-200 rounded-xl py-3 active:bg-red-50"
-          >
-            <LogOut size={16} /> Sign out
-          </button>
         </div>
+
+        <form onSubmit={changePassword} className="card p-4 space-y-3 mb-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-charcoal">
+            <KeyRound size={16} className="text-emerald" />
+            Change password
+          </div>
+          <input
+            className="input py-2.5 text-sm"
+            type="password"
+            placeholder="Current password"
+            value={pwdForm.currentPassword}
+            onChange={(e) => setPwdForm({ ...pwdForm, currentPassword: e.target.value })}
+            required
+          />
+          <input
+            className="input py-2.5 text-sm"
+            type="password"
+            placeholder="New password"
+            value={pwdForm.newPassword}
+            onChange={(e) => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
+            required
+            minLength={4}
+          />
+          <input
+            className="input py-2.5 text-sm"
+            type="password"
+            placeholder="Confirm new password"
+            value={pwdForm.confirm}
+            onChange={(e) => setPwdForm({ ...pwdForm, confirm: e.target.value })}
+            required
+            minLength={4}
+          />
+          <button type="submit" disabled={busy} className="btn-primary w-full py-2.5 text-sm">
+            {busy ? 'Updating…' : 'Update password'}
+          </button>
+        </form>
+
+        <button
+          type="button"
+          onClick={logout}
+          className="w-full flex items-center justify-center gap-2 text-red-600 font-medium border border-red-200 rounded-xl py-3 active:bg-red-50"
+        >
+          <LogOut size={16} /> Sign out
+        </button>
+        {toast && <p className="mt-3 text-center text-sm text-emerald font-medium">{toast}</p>}
       </div>
     );
   }

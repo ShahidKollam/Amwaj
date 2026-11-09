@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../utils/prisma.js';
-import { comparePassword, signToken } from '../utils/auth.js';
-import { requireAuth } from '../middlewares/auth.js';
+import { comparePassword, hashPassword, signToken } from '../utils/auth.js';
+import { requireAuth, requireOwner } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -39,6 +39,85 @@ router.post('/login', async (req, res, next) => {
 
 router.get('/me', requireAuth, (req, res) => {
   res.json({ user: req.user });
+});
+
+/** Change own password */
+router.post('/change-password', requireAuth, async (req, res, next) => {
+  try {
+    const schema = z.object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(4),
+    });
+    const { currentPassword, newPassword } = schema.parse(req.body);
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const valid = await comparePassword(currentPassword, user.passwordHash);
+    if (!valid) return res.status(400).json({ error: 'Current password is incorrect' });
+    const passwordHash = await hashPassword(newPassword);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** List users — owner only */
+router.get('/users', requireAuth, requireOwner, async (req, res, next) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(users);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Create staff account — owner only */
+router.post('/users', requireAuth, requireOwner, async (req, res, next) => {
+  try {
+    const schema = z.object({
+      name: z.string().min(1),
+      username: z.string().min(2),
+      password: z.string().min(4),
+    });
+    const data = schema.parse(req.body);
+    const existing = await prisma.user.findUnique({ where: { username: data.username } });
+    if (existing) {
+      return res.status(409).json({ error: 'Username already exists' });
+    }
+    const passwordHash = await hashPassword(data.password);
+    const user = await prisma.user.create({
+      data: {
+        name: data.name.trim(),
+        username: data.username.trim(),
+        passwordHash,
+        role: 'STAFF',
+      },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
+    res.status(201).json(user);
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

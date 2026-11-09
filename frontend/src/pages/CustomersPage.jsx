@@ -1,28 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../services/api';
-import { Search, User, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
+import { Search, User, ChevronLeft, ChevronRight } from 'lucide-react';
+import DayFilter from '../components/DayFilter';
 
 const PAGE_SIZE = 20;
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function formatDateLabel(iso) {
-  if (!iso) return 'All dates';
-  const d = new Date(iso + 'T12:00:00');
-  const today = todayISO();
-  if (iso === today) return 'Today';
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (iso === yesterday.toISOString().slice(0, 10)) return 'Yesterday';
-  return d.toLocaleDateString('en-IN', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
@@ -67,19 +48,6 @@ export default function CustomersPage() {
     setPage(1);
   }, [search, date]);
 
-  const shiftDate = (delta) => {
-    if (!date) {
-      // Start from today when entering date mode
-      if (delta < 0) setDate(todayISO());
-      return;
-    }
-    const d = new Date(date + 'T12:00:00');
-    d.setDate(d.getDate() + delta);
-    const next = d.toISOString().slice(0, 10);
-    if (next > todayISO()) return;
-    setDate(next);
-  };
-
   return (
     <div className="p-4 max-w-3xl mx-auto pb-6">
       <h1 className="text-xl font-bold text-charcoal mb-1">Customers</h1>
@@ -95,46 +63,12 @@ export default function CustomersPage() {
         />
       </div>
 
-      {/* Date navigator — same pattern as History */}
-      <div className="card p-3 mb-3 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => shiftDate(-1)}
-          className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-muted active:bg-ivory"
-        >
-          <ChevronLeft size={18} />
-        </button>
-        <div className="flex-1 text-center">
-          <div className="font-semibold text-charcoal text-sm">{formatDateLabel(date)}</div>
-          <label className="inline-flex items-center gap-1 text-xs text-muted mt-0.5 cursor-pointer">
-            <Calendar size={12} />
-            <input
-              type="date"
-              value={date || ''}
-              max={todayISO()}
-              onChange={(e) => setDate(e.target.value || null)}
-              className="bg-transparent text-xs text-muted border-0 p-0 focus:outline-none"
-            />
-          </label>
-          {date && (
-            <button
-              type="button"
-              onClick={() => setDate(null)}
-              className="block mx-auto mt-1 text-[11px] font-semibold text-emerald"
-            >
-              Show all dates
-            </button>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => shiftDate(1)}
-          disabled={!date || date >= todayISO()}
-          className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-muted active:bg-ivory disabled:opacity-30"
-        >
-          <ChevronRight size={18} />
-        </button>
-      </div>
+      <DayFilter
+        value={date}
+        onChange={setDate}
+        allowAll
+        hint="Filter by joined date"
+      />
 
       {error && (
         <div className="mb-3 text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">

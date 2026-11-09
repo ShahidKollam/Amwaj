@@ -22,3 +22,10 @@ export async function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
+
+export function requireOwner(req, res, next) {
+  if (!req.user || req.user.role !== 'OWNER') {
+    return res.status(403).json({ error: 'Owner access required' });
+  }
+  next();
+}
