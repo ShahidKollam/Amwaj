@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Search, Plus, Minus, Trash2, UserPlus, ChevronUp, ChevronDown,
+  Search, Plus, Minus, Trash2, UserPlus, ChevronUp,
   Check, Banknote, Smartphone, ArrowLeft, X,
   Droplet, Package, SprayCan, Flame, Box
 } from 'lucide-react';
@@ -55,7 +55,9 @@ export default function BillPage() {
   const categoriesQuery = useCategories();
 
   useEffect(() => {
-    const prods = Array.isArray(productsQuery.data) ? productsQuery.data : [];
+    const prods = (Array.isArray(productsQuery.data) ? productsQuery.data : []).filter(
+      (p) => p?.isActive !== false
+    );
     const cats = Array.isArray(categoriesQuery.data) ? categoriesQuery.data : [];
     if (prods.length) setProducts(prods);
     else if (!productsQuery.isLoading && productsQuery.isFetched) setProducts([]);
@@ -131,48 +133,44 @@ export default function BillPage() {
   const totalPaise = Math.max(0, subtotalPaise + additionalPaise - discountPaise);
 
   const addProduct = (product) => {
-    // Same product: increase qty on one line (do not add duplicate rows)
-    // PER_ML: +3 ml each click (3 → 6 → 9 …). Piece/Spray/Fixed: +1 each click.
+    // Same product again → increase qty on existing line (no duplicate lines)
+    // PER_ML (attar/oud): +3 ml each tap → 3, 6, 9, 12…
+    // SPRAY / FIXED (bakhoor etc.): +1 each tap
     setCart((prev) => {
       const existing = prev.find((i) => i.productId === product.id);
       if (existing) {
         const step = product.productType === 'PER_ML' ? 3 : 1;
-        return prev.map((item) => {
-          if (item.productId !== product.id) return item;
-          const quantity = item.quantity + step;
-          const lineTotal =
-            Math.round(quantity * item.unitPricePaise) - (item.discountPaise || 0);
-          return {
-            ...item,
-            quantity,
-            lineTotalPaise: Math.max(0, lineTotal),
-          };
-        });
+        const qty = existing.quantity + step;
+        const lineTotal =
+          Math.round(qty * existing.unitPricePaise) - (existing.discountPaise || 0);
+        return prev.map((i) =>
+          i.productId === product.id
+            ? { ...i, quantity: qty, lineTotalPaise: Math.max(0, lineTotal) }
+            : i
+        );
       }
-
       if (product.productType === 'PER_ML') {
-        const quantity = 3;
+        const qty = 3;
         return [
           ...prev,
           {
-            key: `${product.id}`,
+            key: `${product.id}-${Date.now()}`,
             productId: product.id,
             productName: product.name,
             productType: product.productType,
             unit: product.unit,
-            quantity,
+            quantity: qty,
             unitPricePaise: product.unitPrice,
-            lineTotalPaise: Math.round(quantity * product.unitPrice),
+            lineTotalPaise: Math.round(qty * product.unitPrice),
             discountPaise: 0,
           },
         ];
       }
-
       if (product.productType === 'SPRAY') {
         return [
           ...prev,
           {
-            key: `${product.id}`,
+            key: `${product.id}-${Date.now()}`,
             productId: product.id,
             productName: product.name,
             productType: 'SPRAY',
@@ -186,11 +184,10 @@ export default function BillPage() {
           },
         ];
       }
-
       return [
         ...prev,
         {
-          key: `${product.id}`,
+          key: `${product.id}-${Date.now()}`,
           productId: product.id,
           productName: product.name,
           productType: product.productType,
@@ -351,114 +348,60 @@ export default function BillPage() {
 
   // ── Completed invoice (stays inside AppShell header + bottom nav) ──
   if (completedInvoice) {
-    const waUrl = getWhatsAppShareUrl(completedInvoice, 'Amwaj');
-    const hasCustomerMobile = !!(completedInvoice.customer?.mobile);
     return (
       <div className="bg-ivory px-3 pt-3 pb-6 max-w-lg mx-auto">
         <div className="rounded-2xl bg-white border border-border shadow-soft overflow-hidden">
-          {/* Shop header */}
-          <div className="bg-emerald px-4 py-4 text-center">
-            <p className="text-gold text-[10px] font-bold tracking-[0.2em] uppercase">Amwaj</p>
-            <p className="text-white font-semibold text-base mt-0.5">Tax Invoice / Receipt</p>
-            <p className="text-white/75 text-xs mt-1">{completedInvoice.invoiceNumber}</p>
-            {completedInvoice.createdAt && (
-              <p className="text-white/55 text-[11px] mt-0.5">
-                {new Date(completedInvoice.createdAt).toLocaleString('en-IN', {
-                  day: '2-digit', month: 'short', year: 'numeric',
-                  hour: '2-digit', minute: '2-digit',
-                })}
+          <div className="bg-emerald px-4 py-3 flex items-center justify-between">
+            <div>
+              <p className="text-white/70 text-[11px] font-medium uppercase tracking-wide">Receipt</p>
+              <p className="text-white font-semibold text-sm">{completedInvoice.invoiceNumber}</p>
+            </div>
+            <div className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center">
+              <Check className="text-gold" size={20} strokeWidth={2.5} />
+            </div>
+          </div>
+          <div className="px-4 pt-4 pb-2 text-center border-b border-border">
+            <p className="text-[11px] text-muted font-medium">Total paid</p>
+            <p className="text-2xl font-bold text-emerald tracking-tight mt-0.5">
+              {formatINR(completedInvoice.totalPaise)}
+            </p>
+            {completedInvoice.customer && (
+              <p className="text-xs text-muted mt-1.5">
+                {completedInvoice.customer?.name}
+                {completedInvoice.customer?.mobile ? ` · ${completedInvoice.customer.mobile}` : ''}
               </p>
             )}
           </div>
-
-          {/* Customer */}
-          {(completedInvoice.customer?.name || completedInvoice.customer?.mobile) && (
-            <div className="px-4 py-3 border-b border-border bg-ivory/50">
-              <p className="text-[10px] uppercase tracking-wide text-muted font-semibold">Customer</p>
-              <p className="text-sm font-semibold text-charcoal mt-0.5">
-                {completedInvoice.customer?.name || '—'}
-              </p>
-              {completedInvoice.customer?.mobile && (
-                <p className="text-xs text-muted">{completedInvoice.customer.mobile}</p>
-              )}
-            </div>
-          )}
-
-          {/* Items — this bill only */}
-          <div className="px-4 py-3">
-            <div className="flex justify-between text-[10px] uppercase tracking-wide text-muted font-semibold mb-2">
-              <span>Item</span>
-              <span>Amount</span>
-            </div>
-            <div className="space-y-2.5 max-h-52 overflow-y-auto">
-              {(completedInvoice.items || []).map((it) => (
-                <div key={it.id || it.productName} className="flex justify-between gap-3 text-sm">
-                  <div className="min-w-0">
-                    <p className="font-medium text-charcoal truncate">{it.productName}</p>
-                    <p className="text-[11px] text-muted">
-                      {it.productType === 'PER_ML'
-                        ? `${it.quantity} ml × ${formatINR(it.unitPricePaise)}/ml`
-                        : `${it.quantity} × ${formatINR(it.unitPricePaise)}`}
-                    </p>
-                  </div>
-                  <span className="shrink-0 font-semibold text-charcoal">
-                    {formatINR(it.lineTotalPaise)}
-                  </span>
-                </div>
-              ))}
-            </div>
+          <div className="px-4 py-3 space-y-1.5 max-h-48 overflow-y-auto">
+            {(completedInvoice.items || []).map((it) => (
+              <div key={it.id || it.productName} className="flex justify-between gap-2 text-sm">
+                <span className="truncate text-charcoal">
+                  {it.productName}
+                  {it.productType === 'PER_ML' ? ` · ${it.quantity} ml` : ''}
+                </span>
+                <span className="shrink-0 font-semibold text-charcoal">
+                  {formatINR(it.lineTotalPaise)}
+                </span>
+              </div>
+            ))}
           </div>
-
-          {/* Totals */}
-          <div className="px-4 py-3 border-t border-border space-y-1 text-sm">
-            {completedInvoice.subtotalPaise != null && (
-              <div className="flex justify-between text-muted">
-                <span>Subtotal</span>
-                <span>{formatINR(completedInvoice.subtotalPaise)}</span>
-              </div>
-            )}
-            {(completedInvoice.additionalPaise || 0) > 0 && (
-              <div className="flex justify-between text-muted">
-                <span>Additional</span>
-                <span>{formatINR(completedInvoice.additionalPaise)}</span>
-              </div>
-            )}
-            {(completedInvoice.discountPaise || 0) > 0 && (
-              <div className="flex justify-between text-muted">
-                <span>Discount</span>
-                <span>-{formatINR(completedInvoice.discountPaise)}</span>
-              </div>
-            )}
-            <div className="flex justify-between items-center pt-2 border-t border-border">
-              <span className="font-bold text-charcoal">Total</span>
-              <span className="text-xl font-bold text-emerald">
-                {formatINR(completedInvoice.totalPaise)}
-              </span>
-            </div>
-            <div className="text-[11px] text-muted pt-1">
-              Paid:{' '}
-              <span className="text-charcoal font-medium">
-                {(completedInvoice.payments || [])
-                  .map((p) => `${p.method} ${formatINR(p.amountPaise)}`)
-                  .join(' + ') || '—'}
-              </span>
-            </div>
+          <div className="px-4 py-2.5 bg-ivory/80 border-t border-border text-[11px] text-muted">
+            Paid:{' '}
+            <span className="text-charcoal font-medium">
+              {(completedInvoice.payments || [])
+                .map((p) => `${p.method} ${formatINR(p.amountPaise)}`)
+                .join(' + ') || '—'}
+            </span>
           </div>
-
-          <div className="p-3 space-y-2 border-t border-border bg-ivory/40">
+          <div className="p-3 space-y-2">
             <a
-              href={waUrl}
+              href={getWhatsAppShareUrl(completedInvoice, 'Amwaj')}
               target="_blank"
               rel="noreferrer"
               className="btn-primary w-full text-center text-sm py-2.5 block"
             >
-              {hasCustomerMobile ? 'Send on WhatsApp' : 'Share on WhatsApp'}
+              {completedInvoice.customer?.mobile ? 'Send on WhatsApp' : 'Share on WhatsApp'}
             </a>
-            {!hasCustomerMobile && (
-              <p className="text-[11px] text-center text-muted px-2">
-                No customer mobile on this bill — WhatsApp will open with the message; pick a contact to send.
-              </p>
-            )}
             <button
               onClick={startNewBill}
               className="w-full py-2.5 rounded-xl border border-border text-sm font-semibold text-charcoal active:bg-ivory"
@@ -515,43 +458,16 @@ export default function BillPage() {
             </div>
           </button>
 
-          {/* Items */}
-          <div className="card divide-y divide-border">
+          {/* Items — same one-line qty controls as cart sheet / desktop */}
+          <div className="card divide-y divide-border px-2">
             {cart.map((item) => (
-              <div key={item.key} className="flex items-center gap-3 p-3">
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm truncate">{item.productName}</div>
-                  <div className="text-xs text-muted">
-                    {item.productType === 'PER_ML'
-                      ? `${item.quantity} ml × ${formatINR(item.unitPricePaise)}`
-                      : `${item.quantity} × ${formatINR(item.unitPricePaise)}`}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => updateQty(item.key, item.productType === 'PER_ML' ? -1 : -1)}
-                    className="w-7 h-7 rounded-lg border border-border flex items-center justify-center"
-                  >
-                    <Minus size={14} />
-                  </button>
-                  <input
-                    type="number"
-                    step={item.productType === 'PER_ML' ? 0.5 : 1}
-                    value={item.quantity}
-                    onChange={(e) => setItemQty(item.key, e.target.value)}
-                    className="w-12 text-center text-sm border border-border rounded-lg py-1"
-                  />
-                  <button
-                    onClick={() => updateQty(item.key, 1)}
-                    className="w-7 h-7 rounded-lg border border-border flex items-center justify-center"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
-                <span className="font-semibold text-sm w-16 text-right shrink-0">
-                  {formatINR(item.lineTotalPaise)}
-                </span>
-              </div>
+              <CartLine
+                key={item.key}
+                item={item}
+                updateQty={updateQty}
+                setItemQty={setItemQty}
+                removeItem={removeItem}
+              />
             ))}
           </div>
 
@@ -879,9 +795,10 @@ export default function BillPage() {
                 </button>
                 <button
                   onClick={() => setBillExpanded(false)}
-                  className="text-xs text-emerald font-medium flex items-center gap-0.5"
+                  className="w-8 h-8 rounded-full border border-border flex items-center justify-center text-charcoal bg-ivory active:bg-border"
+                  aria-label="Close bill items"
                 >
-                  Collapse <ChevronDown size={14} />
+                  <X size={16} />
                 </button>
               </div>
             </div>
@@ -964,50 +881,61 @@ export default function BillPage() {
   );
 }
 
-/* ── Shared cart line ───────────────────────────────────── */
+/* ── Shared cart line (single-row: name + qty + price) ─── */
 function CartLine({ item, updateQty, setItemQty, removeItem, compact }) {
+  const unitLabel =
+    item.productType === 'PER_ML'
+      ? `${formatINR(item.unitPricePaise)}/ml`
+      : item.productType === 'SPRAY' && item.sprayBottleMl
+      ? `${item.sprayBottleMl} ml`
+      : formatINR(item.unitPricePaise);
+
   return (
-    <div className={`flex gap-2 items-start ${compact ? 'py-2 border-b border-border last:border-0' : ''}`}>
+    <div
+      className={`flex items-center gap-2 ${
+        compact ? 'py-2 border-b border-border last:border-0' : 'py-1.5'
+      }`}
+    >
       <div className="flex-1 min-w-0">
-        <div className="font-medium text-sm truncate">{item.productName}</div>
-        <div className="text-[11px] text-muted">
-          {item.productType === 'PER_ML'
-            ? `${item.quantity} ml × ${formatINR(item.unitPricePaise)}/ml`
-            : item.productType === 'SPRAY' && item.sprayBottleMl
-            ? `${item.sprayBottleMl} ml (Oil: ${item.sprayOilMl} ml)`
-            : `${item.quantity} × ${formatINR(item.unitPricePaise)}`}
-        </div>
-        <div className="flex items-center gap-1.5 mt-1.5">
-          <button
-            onClick={() => updateQty(item.key, -1)}
-            className="w-7 h-7 rounded-lg border border-border flex items-center justify-center"
-          >
-            <Minus size={13} />
-          </button>
-          <input
-            type="number"
-            step={item.productType === 'PER_ML' ? 0.5 : 1}
-            value={item.quantity}
-            onChange={(e) => setItemQty(item.key, e.target.value)}
-            className="w-12 text-center text-sm border border-border rounded-lg py-0.5"
-          />
-          <button
-            onClick={() => updateQty(item.key, 1)}
-            className="w-7 h-7 rounded-lg border border-border flex items-center justify-center"
-          >
-            <Plus size={13} />
-          </button>
-          <button
-            onClick={() => removeItem(item.key)}
-            className="ml-1 w-7 h-7 rounded-lg text-muted flex items-center justify-center"
-          >
-            <X size={14} />
-          </button>
-        </div>
+        <div className="font-medium text-sm truncate leading-tight">{item.productName}</div>
+        <div className="text-[11px] text-muted truncate">{unitLabel}</div>
       </div>
-      <span className="font-semibold text-sm shrink-0 pt-0.5">
+
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={() => updateQty(item.key, -1)}
+          className="w-7 h-7 rounded-lg border border-border flex items-center justify-center"
+          aria-label="Decrease"
+        >
+          <Minus size={13} />
+        </button>
+        <input
+          type="number"
+          step={item.productType === 'PER_ML' ? 0.5 : 1}
+          value={item.quantity}
+          onChange={(e) => setItemQty(item.key, e.target.value)}
+          className="w-11 text-center text-sm border border-border rounded-lg py-0.5"
+        />
+        <button
+          onClick={() => updateQty(item.key, 1)}
+          className="w-7 h-7 rounded-lg border border-border flex items-center justify-center"
+          aria-label="Increase"
+        >
+          <Plus size={13} />
+        </button>
+      </div>
+
+      <span className="font-semibold text-sm w-14 text-right shrink-0">
         {formatINR(item.lineTotalPaise)}
       </span>
+
+      <button
+        onClick={() => removeItem(item.key)}
+        className="w-7 h-7 rounded-lg text-muted flex items-center justify-center shrink-0"
+        aria-label="Remove"
+      >
+        <X size={14} />
+      </button>
     </div>
   );
 }

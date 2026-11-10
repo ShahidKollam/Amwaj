@@ -1,13 +1,11 @@
-Amwaj POS v1 (updated)
+Amwaj POS v1.3.9 (20261110)
 
-Includes all current features:
-- Bill: dense cards, category tiles, same-item qty (+3ml / +1)
-- WhatsApp: opens customer chat with full invoice text
-- Receipt design improved
-- Products: edit, hard delete, category tiles, pagination
-- Customers/History: shared DayFilter date navigator
-- Settings: reports (owner, date range), staff create (owner), change password
-- Staff cannot see Reports
-- PostgreSQL, TanStack Query + IndexedDB, cart persist, offline bill sync
+- WhatsApp: professional invoice template on Send / Share
+  · Opens WhatsApp app to customer number (wa.me) with message ready
+  · Space after ₹ so amounts are not linkified
+  · No mobile number in invoice body; title is Invoice (not Tax Invoice)
+  · Clean alignment for items, totals, payment
+- Prior: same-product tap qty (v1.3.8), bill close(X)+one-line qty (v1.3.7)
+- Prior: products cache-first, offline sync, PostgreSQL
 
 Login: admin / amwaj2024

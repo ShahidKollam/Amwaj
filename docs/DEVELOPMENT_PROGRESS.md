@@ -37,3 +37,36 @@ cd ../backend && npx prisma db push
 
 ## Prior features
 Auth (30d JWT), mobile billing workflow, History date filter, Settings menu, modals — unchanged.
+
+## Products page cache (2026-11-09) — v1.3.6
+
+| Item | Status |
+|------|--------|
+| Products page instant IDB hydrate | DONE |
+| Background full-catalog refresh | DONE |
+| Mutations → Query + IDB | DONE |
+| Bill active-only filter | DONE |
+
+No new dependencies. Restart frontend after deploy.
+
+## Bill items UI (2026-11-10) — v1.3.7
+
+| Item | Status |
+|------|--------|
+| Collapse label → close (X) button | DONE |
+| Qty − / input / + on one line | DONE |
+| Shared CartLine on sheet, review, desktop | DONE |
+| Less vertical space (phone + tablet) | DONE |
+
+Only `frontend/src/pages/BillPage.jsx` changed. Restart frontend after deploy.
+
+## Bill qty merge + staff edit (2026-11-10) — v1.3.8
+
+| Item | Status |
+|------|--------|
+| Same product → increase qty | DONE |
+| PER_ML +3 ml steps | DONE |
+| Owner edit staff | DONE |
+| Staff no self password change | DONE |
+
+Files: BillPage.jsx, SettingsPage.jsx, api.js, auth.js

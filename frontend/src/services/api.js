@@ -51,6 +51,8 @@ export const api = {
   getUsers: () => request('/auth/users'),
   createStaff: (data) =>
     request('/auth/users', { method: 'POST', body: JSON.stringify(data) }),
+  updateStaff: (id, data) =>
+    request(`/auth/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
 
   getCategories: () => request('/products/categories'),

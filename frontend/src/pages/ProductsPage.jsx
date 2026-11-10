@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { api, formatINR } from '../services/api';
 import {
   Plus, Package, Pencil, Trash2, ChevronLeft, ChevronRight, Search,
@@ -6,7 +6,12 @@ import {
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryClient';
-import { cacheProducts } from '../lib/db';
+import {
+  cacheProducts,
+  cacheCategories,
+  getCachedProducts,
+  getCachedCategories,
+} from '../lib/db';
 import { ConfirmModal } from '../components/Modal';
 
 const PAGE_SIZE = 15;
@@ -27,6 +32,12 @@ const emptyForm = {
   unit: 'ml',
 };
 
+function asArray(data) {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.items)) return data.items;
+  return [];
+}
+
 export default function ProductsPage() {
   const qc = useQueryClient();
   const [products, setProducts] = useState([]);
@@ -36,34 +47,94 @@ export default function ProductsPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [search, setSearch] = useState('');
-  const [categoryId, setCategoryId] = useState(''); // '' = all
+  const [categoryId, setCategoryId] = useState('');
   const [page, setPage] = useState(0);
   const [error, setError] = useState('');
   const [deleteId, setDeleteId] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const load = () => {
-    setLoading(true);
-    setError('');
-    Promise.all([api.getProducts({ active: 'false' }), api.getCategories()])
-      .then(([p, c]) => {
-        const cats = Array.isArray(c) ? c : [];
-        setProducts(Array.isArray(p) ? p : []);
+  /** Keep Bill catalog (active only) + IDB in sync after management changes */
+  const syncCache = useCallback(
+    async (list) => {
+      const all = asArray(list);
+      const active = all.filter((x) => x?.isActive !== false);
+      qc.setQueryData(queryKeys.products, active);
+      // Full list in IDB so Products page hydrates offline too
+      await cacheProducts(all).catch(console.error);
+    },
+    [qc]
+  );
+
+  /** Instant hydrate from IndexedDB / Query cache, then background network refresh */
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrate = async () => {
+      try {
+        const fromQc = asArray(qc.getQueryData(queryKeys.products));
+        const catsQc = asArray(qc.getQueryData(queryKeys.categories));
+        const [fromIdb, catsIdb] = await Promise.all([
+          getCachedProducts().catch(() => []),
+          getCachedCategories().catch(() => []),
+        ]);
+        const prods = asArray(fromIdb).length ? asArray(fromIdb) : fromQc;
+        const cats = asArray(catsIdb).length ? asArray(catsIdb) : catsQc;
+
+        if (!cancelled && prods.length) {
+          setProducts(prods);
+          setLoading(false);
+        }
+        if (!cancelled && cats.length) {
+          setCategories(cats);
+          setCategoryId((prev) => prev || cats[0]?.id || '');
+          setForm((f) => ({ ...f, categoryId: f.categoryId || cats[0]?.id || '' }));
+        }
+        if (!cancelled && (prods.length || cats.length)) setLoading(false);
+      } catch (e) {
+        console.error('Products IDB hydrate failed', e);
+      }
+    };
+
+    const refresh = async () => {
+      setRefreshing(true);
+      setError('');
+      try {
+        const [p, c] = await Promise.all([
+          api.getProducts({ active: 'false' }),
+          api.getCategories(),
+        ]);
+        if (cancelled) return;
+        const cats = asArray(c);
+        const list = asArray(p);
+        setProducts(list);
         setCategories(cats);
         if (cats[0]) {
           setCategoryId((prev) => prev || cats[0].id);
           setForm((f) => ({ ...f, categoryId: f.categoryId || cats[0].id }));
         }
-      })
-      .catch((err) => {
+        await syncCache(list);
+        await cacheCategories(cats).catch(console.error);
+        qc.setQueryData(queryKeys.categories, cats);
+      } catch (err) {
         console.error(err);
-        setError(err?.message || 'Failed to load products');
-        setProducts([]);
-      })
-      .finally(() => setLoading(false));
-  };
+        if (!cancelled) {
+          setError(err?.message || 'Failed to load products');
+          setProducts((prev) => (prev.length ? prev : []));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    };
 
-  useEffect(load, []);
+    hydrate().then(() => refresh());
+    return () => {
+      cancelled = true;
+    };
+  }, [qc, syncCache]);
 
   const filtered = useMemo(() => {
     let list = Array.isArray(products) ? products : [];
@@ -105,11 +176,6 @@ export default function ProductsPage() {
       unit: p.unit || 'ml',
     });
     setShowForm(true);
-  };
-
-  const syncCache = async (list) => {
-    qc.setQueryData(queryKeys.products, list.filter((x) => x.isActive !== false));
-    await cacheProducts(list.filter((x) => x.isActive !== false)).catch(console.error);
   };
 
   const handleSubmit = async (e) => {
@@ -167,42 +233,34 @@ export default function ProductsPage() {
       <div className="flex items-center justify-between mb-3">
         <div>
           <h1 className="text-xl font-bold text-charcoal">Products</h1>
-          <p className="text-xs text-muted">{filtered.length} items</p>
+          <p className="text-xs text-muted">
+            {filtered.length} items
+            {refreshing ? ' · updating…' : ''}
+          </p>
         </div>
         <button onClick={openCreate} className="btn-primary flex items-center gap-1.5 text-sm py-2 px-3">
           <Plus size={16} /> Add
         </button>
       </div>
 
-      {/* Categories — same one-line tiles as Bill (icon top, name below) */}
       <div className="mb-3 px-0 py-0">
         <div className="grid grid-cols-5 gap-1.5">
           {(Array.isArray(categories) ? categories : []).map((cat) => {
-            const active = categoryId === cat.id;
             const Icon = CATEGORY_ICON[cat.name] || Package;
+            const active = categoryId === cat.id;
             return (
               <button
                 key={cat.id}
                 type="button"
                 onClick={() => setCategoryId(cat.id)}
-                className={`flex flex-col items-center justify-center gap-1 py-2 px-0.5 rounded-xl transition-colors min-h-[58px] ${
+                className={`flex flex-col items-center gap-1 py-2 px-1 rounded-xl border text-[10px] font-semibold transition-colors ${
                   active
-                    ? 'bg-emerald text-white shadow-sm'
-                    : 'bg-ivory text-charcoal border border-border'
+                    ? 'bg-emerald text-white border-emerald'
+                    : 'bg-white text-muted border-border'
                 }`}
               >
-                <Icon
-                  size={18}
-                  strokeWidth={2}
-                  className={active ? 'text-gold' : 'text-emerald'}
-                />
-                <span
-                  className={`text-[10px] font-semibold leading-tight text-center truncate w-full px-0.5 ${
-                    active ? 'text-white' : 'text-muted'
-                  }`}
-                >
-                  {cat.name}
-                </span>
+                <Icon size={16} className={active ? 'text-gold' : 'text-emerald'} />
+                <span className="truncate w-full text-center">{cat.name}</span>
               </button>
             );
           })}
@@ -210,9 +268,9 @@ export default function ProductsPage() {
       </div>
 
       <div className="relative mb-3">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={16} />
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
         <input
-          className="input pl-9 py-2 text-sm"
+          className="input pl-9"
           placeholder="Search products…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -220,7 +278,9 @@ export default function ProductsPage() {
       </div>
 
       {error && (
-        <div className="mb-3 text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</div>
+        <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+          {error}
+        </div>
       )}
 
       {loading ? (
@@ -236,7 +296,14 @@ export default function ProductsPage() {
                   <Package size={18} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate text-sm">{p?.name || '—'}</div>
+                  <div className="font-medium truncate text-sm">
+                    {p?.name || '—'}
+                    {p?.isActive === false && (
+                      <span className="ml-1.5 text-[10px] font-semibold text-muted bg-ivory px-1.5 py-0.5 rounded">
+                        inactive
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-muted">
                     {p?.category?.name || '—'} · {p?.productType || ''} · {formatINR(p?.unitPrice)}
                     {p?.productType === 'PER_ML' ? '/ml' : ''}
@@ -254,7 +321,7 @@ export default function ProductsPage() {
                   <button
                     type="button"
                     onClick={() => setDeleteId(p.id)}
-                    className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-red-600 active:bg-red-50"
+                    className="w-9 h-9 rounded-xl border border-border flex items-center justify-center text-red-500 active:bg-red-50"
                     aria-label="Delete"
                   >
                     <Trash2 size={16} />
@@ -265,25 +332,25 @@ export default function ProductsPage() {
           </div>
 
           {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-3 mt-4">
+            <div className="flex items-center justify-between mt-4 text-sm">
               <button
                 type="button"
-                onClick={() => setPage((x) => Math.max(0, x - 1))}
                 disabled={page === 0}
-                className="w-9 h-9 rounded-xl border border-border flex items-center justify-center disabled:opacity-30"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                className="flex items-center gap-1 px-3 py-2 rounded-xl border border-border disabled:opacity-40"
               >
-                <ChevronLeft size={18} />
+                <ChevronLeft size={16} /> Prev
               </button>
-              <span className="text-sm text-muted">
+              <span className="text-muted">
                 {page + 1} / {totalPages}
               </span>
               <button
                 type="button"
-                onClick={() => setPage((x) => Math.min(totalPages - 1, x + 1))}
                 disabled={page >= totalPages - 1}
-                className="w-9 h-9 rounded-xl border border-border flex items-center justify-center disabled:opacity-30"
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                className="flex items-center gap-1 px-3 py-2 rounded-xl border border-border disabled:opacity-40"
               >
-                <ChevronRight size={18} />
+                Next <ChevronRight size={16} />
               </button>
             </div>
           )}
@@ -291,12 +358,14 @@ export default function ProductsPage() {
       )}
 
       {showForm && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4">
           <form
             onSubmit={handleSubmit}
-            className="bg-white rounded-3xl w-full max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+            className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-4 space-y-3 shadow-xl max-h-[90vh] overflow-auto"
           >
-            <h3 className="font-semibold text-lg">{editing ? 'Edit Product' : 'New Product'}</h3>
+            <h2 className="font-bold text-lg text-charcoal">
+              {editing ? 'Edit product' : 'New product'}
+            </h2>
             <input
               className="input"
               placeholder="Name"

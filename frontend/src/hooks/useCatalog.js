@@ -50,7 +50,7 @@ export async function hydrateCatalogFromIdb(qc) {
     ]);
     const p = asArray(products);
     const c = asArray(categories);
-    if (p.length) qc.setQueryData(queryKeys.products, p);
+    if (p.length) qc.setQueryData(queryKeys.products, p.filter((x) => x?.isActive !== false));
     if (c.length) qc.setQueryData(queryKeys.categories, c);
     return { products: p, categories: c };
   } catch (e) {

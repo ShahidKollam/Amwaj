@@ -1,5 +1,3 @@
-import { formatINR } from '../services/api';
-
 /** Normalize Indian mobile to digits with country code 91 (wa.me format). */
 export function toWhatsAppNumber(mobile) {
   if (!mobile) return '';
@@ -12,12 +10,31 @@ export function toWhatsAppNumber(mobile) {
   return digits;
 }
 
-/** Build a clear plain-text invoice for WhatsApp (items on this bill only). */
+/** Format amount for WhatsApp: space after ₹ so WhatsApp does not linkify. */
+function formatMoney(paise) {
+  const rupees = (Number(paise) || 0) / 100;
+  const num = new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(rupees);
+  return `₹ ${num}`;
+}
+
+/**
+ * Beautiful, professional plain-text invoice for WhatsApp.
+ * - No customer mobile in the body (privacy / clean look)
+ * - Space after ₹ so amounts are not treated as links
+ * - Title is simply "Invoice" (not Tax Invoice)
+ */
 export function buildInvoiceWhatsAppText(invoice, shopName = 'Amwaj') {
   if (!invoice) return '';
   const lines = [];
-  lines.push(`*${shopName} — Invoice*`);
-  lines.push(`${invoice.invoiceNumber || ''}`);
+  const shop = (shopName || 'Amwaj').toUpperCase();
+
+  lines.push(`*${shop}*`);
+  lines.push('────────────────');
+  lines.push('*INVOICE*');
+  if (invoice.invoiceNumber) lines.push(invoice.invoiceNumber);
   if (invoice.createdAt) {
     try {
       lines.push(
@@ -34,46 +51,45 @@ export function buildInvoiceWhatsAppText(invoice, shopName = 'Amwaj') {
   lines.push('');
 
   const cust = invoice.customer;
-  if (cust?.name || cust?.mobile) {
-    lines.push(`*Customer*`);
-    if (cust.name) lines.push(cust.name);
-    if (cust.mobile) lines.push(cust.mobile);
+  if (cust?.name) {
+    lines.push(`Customer: ${cust.name}`);
     lines.push('');
   }
 
-  lines.push(`*Items*`);
+  lines.push('*Items*');
   const items = Array.isArray(invoice.items) ? invoice.items : [];
   items.forEach((it, i) => {
-    const qty =
+    const name = it.productName || 'Item';
+    const qtyPart =
       it.productType === 'PER_ML'
         ? `${it.quantity} ml`
         : `${it.quantity}`;
-    const name = it.productName || 'Item';
-    lines.push(`${i + 1}. ${name} (${qty})`);
-    lines.push(`   ${formatINR(it.lineTotalPaise)}`);
+    lines.push(`${i + 1}. ${name}`);
+    lines.push(`   ${qtyPart}  ·  ${formatMoney(it.lineTotalPaise)}`);
   });
 
   lines.push('');
+  lines.push('────────────────');
   if (invoice.subtotalPaise != null) {
-    lines.push(`Subtotal: ${formatINR(invoice.subtotalPaise)}`);
+    lines.push(`Subtotal     ${formatMoney(invoice.subtotalPaise)}`);
   }
   if (invoice.additionalPaise > 0) {
-    lines.push(`Additional: ${formatINR(invoice.additionalPaise)}`);
+    lines.push(`Additional   ${formatMoney(invoice.additionalPaise)}`);
   }
   if (invoice.discountPaise > 0) {
-    lines.push(`Discount: -${formatINR(invoice.discountPaise)}`);
+    lines.push(`Discount    -${formatMoney(invoice.discountPaise)}`);
   }
-  lines.push(`*Total: ${formatINR(invoice.totalPaise)}*`);
+  lines.push(`*Total       ${formatMoney(invoice.totalPaise)}*`);
 
   const pays = Array.isArray(invoice.payments) ? invoice.payments : [];
   if (pays.length) {
     lines.push(
-      `Paid: ${pays.map((p) => `${p.method} ${formatINR(p.amountPaise)}`).join(' + ')}`
+      `Paid: ${pays.map((p) => `${p.method} ${formatMoney(p.amountPaise)}`).join(' + ')}`
     );
   }
 
   lines.push('');
-  lines.push('Thank you for shopping with us.');
+  lines.push(`Thank you for shopping with ${shopName || 'Amwaj'}.`);
   return lines.join('\n');
 }
 

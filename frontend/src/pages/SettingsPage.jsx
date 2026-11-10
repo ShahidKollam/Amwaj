@@ -38,6 +38,7 @@ export default function SettingsPage() {
   const [toast, setToast] = useState('');
   const [staffList, setStaffList] = useState([]);
   const [staffForm, setStaffForm] = useState({ name: '', username: '', password: '' });
+  const [editStaff, setEditStaff] = useState(null); // { id, name, password, isActive }
   const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [busy, setBusy] = useState(false);
 
@@ -47,9 +48,14 @@ export default function SettingsPage() {
       ? [{ id: 'reports', label: 'Reports', desc: 'Sales by date range', icon: BarChart3 }]
       : []),
     ...(isOwner
-      ? [{ id: 'staff', label: 'Staff accounts', desc: 'Create staff login', icon: Users }]
+      ? [{ id: 'staff', label: 'Staff accounts', desc: 'Create & edit staff', icon: Users }]
       : []),
-    { id: 'account', label: 'Account', desc: 'Password & sign out', icon: User },
+    {
+      id: 'account',
+      label: 'Account',
+      desc: isOwner ? 'Password & sign out' : 'Profile & sign out',
+      icon: User,
+    },
   ];
 
   useEffect(() => {
@@ -105,6 +111,31 @@ export default function SettingsPage() {
       setTimeout(() => setToast(''), 2000);
     } catch (err) {
       setToast(err.message || 'Could not create staff');
+      setTimeout(() => setToast(''), 3000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveStaffEdit = async (e) => {
+    e.preventDefault();
+    if (!editStaff?.id) return;
+    setBusy(true);
+    try {
+      const payload = {
+        name: editStaff.name,
+        isActive: editStaff.isActive,
+      };
+      if (editStaff.password && editStaff.password.length >= 4) {
+        payload.password = editStaff.password;
+      }
+      const updated = await api.updateStaff(editStaff.id, payload);
+      setStaffList((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      setEditStaff(null);
+      setToast('Staff updated');
+      setTimeout(() => setToast(''), 2000);
+    } catch (err) {
+      setToast(err.message || 'Could not update staff');
       setTimeout(() => setToast(''), 3000);
     } finally {
       setBusy(false);
@@ -393,16 +424,74 @@ export default function SettingsPage() {
         <div className="space-y-2">
           <p className="text-xs text-muted font-semibold uppercase tracking-wide px-1">Accounts</p>
           {staffList.map((u) => (
-            <div key={u.id} className="card p-3 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-emerald/10 flex items-center justify-center text-emerald font-bold text-sm">
-                {(u.name || u.username || '?')[0].toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm truncate">{u.name}</div>
-                <div className="text-xs text-muted">
-                  @{u.username} · {u.role}
+            <div key={u.id} className="card p-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald/10 flex items-center justify-center text-emerald font-bold text-sm">
+                  {(u.name || u.username || '?')[0].toUpperCase()}
                 </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm truncate">{u.name}</div>
+                  <div className="text-xs text-muted">
+                    @{u.username} · {u.role}
+                    {u.isActive === false ? ' · Inactive' : ''}
+                  </div>
+                </div>
+                {u.role !== 'OWNER' && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditStaff({
+                        id: u.id,
+                        name: u.name || '',
+                        password: '',
+                        isActive: u.isActive !== false,
+                      })
+                    }
+                    className="text-xs font-medium text-emerald px-2 py-1 rounded-lg border border-emerald/30"
+                  >
+                    Edit
+                  </button>
+                )}
               </div>
+              {editStaff?.id === u.id && (
+                <form onSubmit={saveStaffEdit} className="mt-3 pt-3 border-t border-border space-y-2">
+                  <input
+                    className="input py-2 text-sm"
+                    placeholder="Display name"
+                    value={editStaff.name}
+                    onChange={(e) => setEditStaff({ ...editStaff, name: e.target.value })}
+                    required
+                  />
+                  <input
+                    className="input py-2 text-sm"
+                    type="password"
+                    placeholder="New password (leave blank to keep)"
+                    value={editStaff.password}
+                    onChange={(e) => setEditStaff({ ...editStaff, password: e.target.value })}
+                    minLength={4}
+                  />
+                  <label className="flex items-center gap-2 text-sm text-charcoal">
+                    <input
+                      type="checkbox"
+                      checked={editStaff.isActive}
+                      onChange={(e) => setEditStaff({ ...editStaff, isActive: e.target.checked })}
+                    />
+                    Active (can log in)
+                  </label>
+                  <div className="flex gap-2">
+                    <button type="submit" disabled={busy} className="btn-primary flex-1 py-2 text-sm">
+                      {busy ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditStaff(null)}
+                      className="flex-1 py-2 text-sm rounded-xl border border-border"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           ))}
           {staffList.length === 0 && (
@@ -432,41 +521,47 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <form onSubmit={changePassword} className="card p-4 space-y-3 mb-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-charcoal">
-            <KeyRound size={16} className="text-emerald" />
-            Change password
+        {isOwner ? (
+          <form onSubmit={changePassword} className="card p-4 space-y-3 mb-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-charcoal">
+              <KeyRound size={16} className="text-emerald" />
+              Change password
+            </div>
+            <input
+              className="input py-2.5 text-sm"
+              type="password"
+              placeholder="Current password"
+              value={pwdForm.currentPassword}
+              onChange={(e) => setPwdForm({ ...pwdForm, currentPassword: e.target.value })}
+              required
+            />
+            <input
+              className="input py-2.5 text-sm"
+              type="password"
+              placeholder="New password"
+              value={pwdForm.newPassword}
+              onChange={(e) => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
+              required
+              minLength={4}
+            />
+            <input
+              className="input py-2.5 text-sm"
+              type="password"
+              placeholder="Confirm new password"
+              value={pwdForm.confirm}
+              onChange={(e) => setPwdForm({ ...pwdForm, confirm: e.target.value })}
+              required
+              minLength={4}
+            />
+            <button type="submit" disabled={busy} className="btn-primary w-full py-2.5 text-sm">
+              {busy ? 'Updating…' : 'Update password'}
+            </button>
+          </form>
+        ) : (
+          <div className="card p-4 mb-3 text-sm text-muted">
+            Password is managed by the owner. Contact admin to reset.
           </div>
-          <input
-            className="input py-2.5 text-sm"
-            type="password"
-            placeholder="Current password"
-            value={pwdForm.currentPassword}
-            onChange={(e) => setPwdForm({ ...pwdForm, currentPassword: e.target.value })}
-            required
-          />
-          <input
-            className="input py-2.5 text-sm"
-            type="password"
-            placeholder="New password"
-            value={pwdForm.newPassword}
-            onChange={(e) => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
-            required
-            minLength={4}
-          />
-          <input
-            className="input py-2.5 text-sm"
-            type="password"
-            placeholder="Confirm new password"
-            value={pwdForm.confirm}
-            onChange={(e) => setPwdForm({ ...pwdForm, confirm: e.target.value })}
-            required
-            minLength={4}
-          />
-          <button type="submit" disabled={busy} className="btn-primary w-full py-2.5 text-sm">
-            {busy ? 'Updating…' : 'Update password'}
-          </button>
-        </form>
+        )}
 
         <button
           type="button"

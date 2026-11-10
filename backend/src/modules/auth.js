@@ -41,9 +41,12 @@ router.get('/me', requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
-/** Change own password */
+/** Change own password — OWNER only (staff cannot change password) */
 router.post('/change-password', requireAuth, async (req, res, next) => {
   try {
+    if (req.user.role !== 'OWNER') {
+      return res.status(403).json({ error: 'Staff cannot change password. Ask the owner.' });
+    }
     const schema = z.object({
       currentPassword: z.string().min(1),
       newPassword: z.string().min(4),
@@ -115,6 +118,42 @@ router.post('/users', requireAuth, requireOwner, async (req, res, next) => {
       },
     });
     res.status(201).json(user);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Update staff — owner only (name, password, active) */
+router.patch('/users/:id', requireAuth, requireOwner, async (req, res, next) => {
+  try {
+    const schema = z.object({
+      name: z.string().min(1).optional(),
+      password: z.string().min(4).optional(),
+      isActive: z.boolean().optional(),
+    });
+    const data = schema.parse(req.body);
+    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.role === 'OWNER') {
+      return res.status(400).json({ error: 'Cannot edit owner account here' });
+    }
+    const update = {};
+    if (data.name !== undefined) update.name = data.name.trim();
+    if (data.isActive !== undefined) update.isActive = data.isActive;
+    if (data.password) update.passwordHash = await hashPassword(data.password);
+    const user = await prisma.user.update({
+      where: { id: target.id },
+      data: update,
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
+    res.json(user);
   } catch (err) {
     next(err);
   }
