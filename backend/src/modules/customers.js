@@ -10,10 +10,11 @@ router.get('/', async (req, res, next) => {
   try {
     const { search, page = 1, pageSize = 20, date, from, to } = req.query;
     const where = {};
-    if (search) {
+    if (search && String(search).trim()) {
+      const q = String(search).trim();
       where.OR = [
-        { name: { contains: search } },
-        { mobile: { contains: search } },
+        { name: { contains: q, mode: 'insensitive' } },
+        { mobile: { contains: q, mode: 'insensitive' } },
       ];
     }
     // Optional created-date filter (single day or range)

@@ -60,6 +60,30 @@ router.post('/complete', async (req, res, next) => {
       }
     }
 
+    // Snapshot purchase prices; reject group (parent) products — not sellable
+    const productIds = [
+      ...new Set(
+        body.items.map((it) => it.productId).filter((id) => id && typeof id === 'string')
+      ),
+    ];
+    const purchaseByProduct = {};
+    if (productIds.length) {
+      const prods = await prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true, purchasePrice: true, isGroup: true, name: true },
+      });
+      const groupHit = prods.find((p) => p.isGroup);
+      if (groupHit) {
+        return res.status(400).json({
+          error: `"${groupHit.name}" is a product group. Add a bottle size variant instead.`,
+        });
+      }
+      prods.forEach((p) => {
+        purchaseByProduct[p.id] =
+          p.purchasePrice != null && p.purchasePrice >= 0 ? p.purchasePrice : null;
+      });
+    }
+
     // Calculate line totals and validate
     let subtotal = 0;
     const processedItems = body.items.map((item) => {
@@ -75,10 +99,16 @@ router.post('/complete', async (req, res, next) => {
         }
       }
 
+      const purchasePricePaise =
+        item.productId && purchaseByProduct[item.productId] != null
+          ? purchaseByProduct[item.productId]
+          : null;
+
       subtotal += lineTotal;
       return {
         ...item,
         lineTotalPaise: lineTotal,
+        purchasePricePaise,
         sprayLiquidMl: item.sprayBottleMl && item.sprayOilMl
           ? item.sprayBottleMl - item.sprayOilMl
           : null,
@@ -135,6 +165,8 @@ router.post('/complete', async (req, res, next) => {
               unit: it.unit,
               quantity: new Prisma.Decimal(it.quantity),
               unitPricePaise: it.unitPricePaise,
+              purchasePricePaise:
+                it.purchasePricePaise != null ? it.purchasePricePaise : null,
               lineTotalPaise: it.lineTotalPaise,
               discountPaise: it.discountPaise || 0,
               sprayBottleMl: it.sprayBottleMl || null,
@@ -172,11 +204,12 @@ router.get('/history', async (req, res, next) => {
     const { search, from, to, date, page = 1, pageSize = 20 } = req.query;
     const where = { status: 'COMPLETED' };
 
-    if (search) {
+    if (search && String(search).trim()) {
+      const q = String(search).trim();
       where.OR = [
-        { invoiceNumber: { contains: search } },
-        { customer: { name: { contains: search } } },
-        { customer: { mobile: { contains: search } } },
+        { invoiceNumber: { contains: q, mode: 'insensitive' } },
+        { customer: { name: { contains: q, mode: 'insensitive' } } },
+        { customer: { mobile: { contains: q, mode: 'insensitive' } } },
       ];
     }
 
@@ -200,6 +233,8 @@ router.get('/history', async (req, res, next) => {
     const take = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
     const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
 
+    const isOwner = req.user?.role === 'OWNER';
+
     const [invoices, total, aggregates] = await Promise.all([
       prisma.invoice.findMany({
         where,
@@ -207,6 +242,20 @@ router.get('/history', async (req, res, next) => {
           customer: { select: { name: true, mobile: true } },
           payments: true,
           _count: { select: { items: true } },
+          // Owner needs items for per-invoice cost; keep lean for staff
+          ...(isOwner
+            ? {
+                items: {
+                  select: {
+                    quantity: true,
+                    unitPricePaise: true,
+                    purchasePricePaise: true,
+                    lineTotalPaise: true,
+                    discountPaise: true,
+                  },
+                },
+              }
+            : {}),
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -220,14 +269,69 @@ router.get('/history', async (req, res, next) => {
       }),
     ]);
 
+    let dayCostPaise = null;
+    let dayProfitPaise = null;
+    let dayCostKnown = false;
+
+    if (isOwner) {
+      // Full-day cost from all matching invoices (not just current page)
+      const dayItems = await prisma.invoiceItem.findMany({
+        where: { invoice: where },
+        select: {
+          quantity: true,
+          purchasePricePaise: true,
+          lineTotalPaise: true,
+        },
+      });
+      let cost = 0;
+      let anyKnown = false;
+      dayItems.forEach((it) => {
+        if (it.purchasePricePaise != null) {
+          anyKnown = true;
+          cost += Math.round(Number(it.quantity) * it.purchasePricePaise);
+        }
+      });
+      dayCostKnown = anyKnown;
+      dayCostPaise = anyKnown ? cost : null;
+      dayProfitPaise =
+        anyKnown && aggregates._sum.totalPaise != null
+          ? (aggregates._sum.totalPaise || 0) - cost
+          : null;
+    }
+
+    const itemsOut = invoices.map((inv) => {
+      if (!isOwner) return inv;
+      let invCost = 0;
+      let hasCost = false;
+      (inv.items || []).forEach((it) => {
+        if (it.purchasePricePaise != null) {
+          hasCost = true;
+          invCost += Math.round(Number(it.quantity) * it.purchasePricePaise);
+        }
+      });
+      const { items, ...rest } = inv;
+      return {
+        ...rest,
+        costPaise: hasCost ? invCost : null,
+        profitPaise: hasCost ? (inv.totalPaise || 0) - invCost : null,
+      };
+    });
+
     res.json({
-      items: invoices,
+      items: itemsOut,
       total,
       page: Math.max(Number(page) || 1, 1),
       pageSize: take,
       totalPages: Math.ceil(total / take) || 1,
       dayTotalPaise: aggregates._sum.totalPaise || 0,
       dayBillCount: aggregates._count || 0,
+      ...(isOwner
+        ? {
+            dayCostPaise,
+            dayProfitPaise,
+            dayCostKnown,
+          }
+        : {}),
     });
   } catch (err) {
     next(err);
@@ -236,6 +340,7 @@ router.get('/history', async (req, res, next) => {
 
 router.get('/:id', async (req, res, next) => {
   try {
+    const isOwner = req.user?.role === 'OWNER';
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
       include: {
@@ -246,7 +351,42 @@ router.get('/:id', async (req, res, next) => {
       },
     });
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
-    res.json(invoice);
+
+    if (!isOwner) {
+      // Strip cost fields from line items for staff
+      const items = (invoice.items || []).map((it) => {
+        const { purchasePricePaise, ...rest } = it;
+        return rest;
+      });
+      return res.json({ ...invoice, items });
+    }
+
+    // Owner: attach line cost/profit for UI
+    let invCost = 0;
+    let hasCost = false;
+    const items = (invoice.items || []).map((it) => {
+      const lineCost =
+        it.purchasePricePaise != null
+          ? Math.round(Number(it.quantity) * it.purchasePricePaise)
+          : null;
+      if (lineCost != null) {
+        hasCost = true;
+        invCost += lineCost;
+      }
+      return {
+        ...it,
+        lineCostPaise: lineCost,
+        lineProfitPaise:
+          lineCost != null ? (it.lineTotalPaise || 0) - lineCost : null,
+      };
+    });
+
+    res.json({
+      ...invoice,
+      items,
+      costPaise: hasCost ? invCost : null,
+      profitPaise: hasCost ? (invoice.totalPaise || 0) - invCost : null,
+    });
   } catch (err) {
     next(err);
   }

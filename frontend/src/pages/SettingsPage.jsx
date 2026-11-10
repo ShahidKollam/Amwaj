@@ -352,13 +352,51 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            {/* P&L — owner only; based on purchase rate snapped at sale */}
+            {(report.costKnown || report.totalProfitPaise != null) && (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="card p-3 text-center">
+                  <p className="text-[10px] uppercase text-muted font-semibold">Est. cost</p>
+                  <p className="text-lg font-bold text-charcoal mt-1">
+                    {report.totalCostPaise != null
+                      ? formatINR(report.totalCostPaise)
+                      : '—'}
+                  </p>
+                </div>
+                <div className="card p-3 text-center">
+                  <p className="text-[10px] uppercase text-muted font-semibold">Est. profit</p>
+                  <p
+                    className={`text-lg font-bold mt-1 ${
+                      (report.totalProfitPaise || 0) >= 0 ? 'text-emerald' : 'text-red-600'
+                    }`}
+                  >
+                    {report.totalProfitPaise != null
+                      ? formatINR(report.totalProfitPaise)
+                      : '—'}
+                  </p>
+                </div>
+              </div>
+            )}
+            {!report.costKnown && (
+              <p className="text-[11px] text-muted text-center px-2">
+                Set purchase rates on products to see cost &amp; profit. Profit uses cost at the time of each sale.
+              </p>
+            )}
+
             {(report.topItems || []).length > 0 && (
               <div className="card p-3">
                 <p className="text-[10px] uppercase text-muted font-semibold mb-2">Top items</p>
                 <div className="space-y-2">
                   {report.topItems.slice(0, 8).map((it) => (
                     <div key={it.name} className="flex justify-between gap-2 text-sm">
-                      <span className="truncate text-charcoal">{it.name}</span>
+                      <span className="truncate text-charcoal min-w-0">
+                        {it.name}
+                        {it.profitPaise != null && (
+                          <span className="block text-[10px] text-muted font-normal">
+                            profit {formatINR(it.profitPaise)}
+                          </span>
+                        )}
+                      </span>
                       <span className="shrink-0 font-semibold text-emerald">
                         {formatINR(it.revenue)}
                       </span>

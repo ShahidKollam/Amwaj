@@ -1,6 +1,35 @@
 # Amwaj POS — Development Progress
 
-**Last update:** 2026-11-08 — Caching & offline persistence
+**Last update:** 2026-11-10 — Purchase rate + admin P&L (v1.4.0)
+
+## Purchase rate & P&L (2026-11-10) — v1.4.0
+
+| Item | Status |
+|------|--------|
+| Product.purchasePrice optional (paise) | DONE |
+| InvoiceItem.purchasePricePaise snapshot | DONE |
+| Owner-only set/view purchase rate | DONE |
+| Staff API/UI never expose cost | DONE |
+| Sales report cost + profit | DONE |
+| History day/bill/invoice profit (owner) | DONE |
+
+### Schema
+- `Product.purchasePrice Int?`
+- `InvoiceItem.purchasePricePaise Int?`
+
+### Deploy
+```bash
+cd backend && npx prisma db push
+# restart backend + frontend
+```
+
+### Notes
+- Profit = sold total − (qty × purchase rate at sale). Lines without purchase rate are omitted from cost; day profit shows only when at least one known cost exists.
+- Staff product create/edit still works for selling price; purchase field hidden.
+
+---
+
+**Prior last update:** 2026-11-08 — Caching & offline persistence
 
 ## Caching update (this release)
 
@@ -70,3 +99,13 @@ Only `frontend/src/pages/BillPage.jsx` changed. Restart frontend after deploy.
 | Staff no self password change | DONE |
 
 Files: BillPage.jsx, SettingsPage.jsx, api.js, auth.js
+
+## Clean seed + spray notes (2026-11-10) — v1.4.1
+
+| Item | Status |
+|------|--------|
+| Seed: no fake invoices | DONE |
+| Seed: staff user + purchase rates | DONE |
+| Docs: prisma wipe/seed commands | DONE |
+| Docs: spray pricing ideas | DONE |
+

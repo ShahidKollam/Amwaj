@@ -45,7 +45,7 @@ export default function HistoryPage() {
   }, [search, date]);
 
   useEffect(() => {
-    const t = setTimeout(load, search ? 280 : 0); // debounce search
+    const t = setTimeout(load, search ? 280 : 0);
     return () => clearTimeout(t);
   }, [load, search]);
 
@@ -67,7 +67,7 @@ export default function HistoryPage() {
 
       <DayFilter value={date} onChange={setDate} hint="Bills for this day" />
 
-      {/* Day summary */}
+      {/* Day summary — sales only; P&L lives in Settings → Reports */}
       <div className="grid grid-cols-2 gap-2 mb-4">
         <div className="card p-3 text-center">
           <div className="text-lg font-bold text-emerald">{formatINR(dayTotal)}</div>
@@ -79,7 +79,6 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      {/* Search */}
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={18} />
         <input
@@ -129,7 +128,6 @@ export default function HistoryPage() {
             ))}
           </div>
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-3 mt-4">
               <button
@@ -154,7 +152,6 @@ export default function HistoryPage() {
         </>
       )}
 
-      {/* Invoice detail modal */}
       <Modal
         open={!!selected}
         onClose={() => setSelected(null)}
@@ -184,12 +181,12 @@ export default function HistoryPage() {
             )}
             <div className="space-y-2 border-t border-border pt-3">
               {selected.items.map((it) => (
-                <div key={it.id} className="flex justify-between text-sm">
-                  <span>
+                <div key={it.id} className="flex justify-between text-sm gap-2">
+                  <span className="min-w-0">
                     {it.productName}
                     {it.productType === 'PER_ML' ? ` (${it.quantity} ml)` : ''}
                   </span>
-                  <span className="font-medium">{formatINR(it.lineTotalPaise)}</span>
+                  <span className="font-medium shrink-0">{formatINR(it.lineTotalPaise)}</span>
                 </div>
               ))}
             </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Search, Plus, Minus, Trash2, UserPlus, ChevronUp,
+  Search, Plus, Minus, Trash2, UserPlus, ChevronUp, ChevronDown, ChevronRight,
   Check, Banknote, Smartphone, ArrowLeft, X,
   Droplet, Package, SprayCan, Flame, Box
 } from 'lucide-react';
@@ -114,15 +114,91 @@ export default function BillPage() {
     });
   }, [cart, customer, additional, discount, cash, upi]);
 
-  const filteredProducts = useMemo(() => {
+  // Expanded spray groups on the bill browser
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set());
+
+  const toggleGroup = (id) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  /**
+   * Catalog rows for bill UI:
+   * - Standalone sellable products (attar/oud/bakhoor/…) as before
+   * - Spray groups as parent headings; children are billable sizes
+   * Search is case-insensitive; matches parent or child name / size
+   */
+  const catalogRows = useMemo(() => {
     let list = Array.isArray(products) ? products : [];
     if (activeCategory) list = list.filter((p) => p?.categoryId === activeCategory);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter((p) => (p?.name || '').toLowerCase().includes(q));
-    }
-    return list;
+
+    const q = search.trim().toLowerCase();
+    const matches = (p) => {
+      if (!q) return true;
+      const name = (p?.name || '').toLowerCase();
+      const size = p?.bottleSizeMl != null ? String(p.bottleSizeMl) : '';
+      return (
+        name.includes(q) ||
+        (size && (name.includes(size) || `${size}ml`.includes(q) || q.includes(size)))
+      );
+    };
+
+    const groups = list.filter((p) => p.isGroup);
+    const childrenByParent = {};
+    list
+      .filter((p) => p.parentId && !p.isGroup)
+      .forEach((c) => {
+        if (!childrenByParent[c.parentId]) childrenByParent[c.parentId] = [];
+        childrenByParent[c.parentId].push(c);
+      });
+    Object.values(childrenByParent).forEach((arr) =>
+      arr.sort(
+        (a, b) =>
+          (a.bottleSizeMl || a.sortOrder || 0) - (b.bottleSizeMl || b.sortOrder || 0) ||
+          (a.name || '').localeCompare(b.name || '')
+      )
+    );
+
+    // Standalone: not group, no parent (attar, oud, fixed, old flat sprays)
+    const standalone = list.filter((p) => !p.isGroup && !p.parentId);
+
+    const rows = [];
+
+    // Groups first within spray (or any category with groups)
+    groups
+      .slice()
+      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || (a.name || '').localeCompare(b.name || ''))
+      .forEach((g) => {
+        const kids = childrenByParent[g.id] || [];
+        const groupMatch = matches(g);
+        const matchedKids = q ? kids.filter(matches) : kids;
+        if (q && !groupMatch && matchedKids.length === 0) return;
+        const showKids = q ? matchedKids : kids;
+        const forceOpen = Boolean(q && (groupMatch || matchedKids.length > 0));
+        rows.push({
+          type: 'group',
+          product: g,
+          children: showKids,
+          forceOpen,
+          childCount: kids.length,
+        });
+      });
+
+    standalone
+      .filter(matches)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .forEach((p) => {
+        rows.push({ type: 'product', product: p });
+      });
+
+    return rows;
   }, [products, activeCategory, search]);
+
+  const filteredProducts = catalogRows; // kept name for minimal churn in empty-state checks
 
   const subtotalPaise = useMemo(
     () => (Array.isArray(cart) ? cart : []).reduce((s, item) => s + (item?.lineTotalPaise || 0), 0),
@@ -133,6 +209,9 @@ export default function BillPage() {
   const totalPaise = Math.max(0, subtotalPaise + additionalPaise - discountPaise);
 
   const addProduct = (product) => {
+    // Parent groups are headings only — never billable
+    if (!product || product.isGroup) return;
+
     // Same product again → increase qty on existing line (no duplicate lines)
     // PER_ML (attar/oud): +3 ml each tap → 3, 6, 9, 12…
     // SPRAY / FIXED (bakhoor etc.): +1 each tap
@@ -167,6 +246,7 @@ export default function BillPage() {
         ];
       }
       if (product.productType === 'SPRAY') {
+        const bottleMl = product.bottleSizeMl || null;
         return [
           ...prev,
           {
@@ -174,13 +254,13 @@ export default function BillPage() {
             productId: product.id,
             productName: product.name,
             productType: 'SPRAY',
-            unit: 'piece',
+            unit: product.unit || 'piece',
             quantity: 1,
             unitPricePaise: product.unitPrice,
             lineTotalPaise: product.unitPrice,
             discountPaise: 0,
-            sprayBottleMl: 100,
-            sprayOilMl: 60,
+            sprayBottleMl: bottleMl,
+            sprayOilMl: null,
           },
         ];
       }
@@ -664,65 +744,118 @@ export default function BillPage() {
           </div>
         </div>
 
-        {/* Product grid — 2 cols on mobile, list on desktop */}
-        <div className="flex-1 overflow-y-auto px-3 pb-28 md:pb-4">
-          {filteredProducts.length === 0 ? (
-            <p className="text-center text-muted text-sm py-10">No products found</p>
-          ) : (
-            <>
-              {/* Mobile: dense 2-col cards — name + price left, + right (ref) */}
-              <div className="grid grid-cols-2 gap-2 md:hidden">
-                {filteredProducts.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => addProduct(p)}
-                    className="bg-white rounded-2xl border border-[#E5E0D8] shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-3 py-2.5 text-left active:scale-[0.98] transition-transform flex items-center gap-2 min-h-[56px]"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-[13px] text-charcoal leading-tight truncate">
-                        {p?.name || 'Product'}
+        {/* Product grid: 2 per row (mobile + desktop). Spray groups expand in place. */}
+
+{/* Product grid: 2 per row. Each card keeps its own height. */}
+<div className="flex-1 overflow-y-auto px-3 pb-28 md:pb-4">
+  {catalogRows.length === 0 ? (
+    <p className="text-center text-muted text-sm py-10">
+      No products found
+    </p>
+  ) : (
+    <div className="grid grid-cols-2 items-start content-start gap-2">
+
+      {catalogRows.map((row) => {
+        if (row.type === 'group') {
+          const g = row.product;
+          const open = row.forceOpen || expandedGroups.has(g.id);
+
+          return (
+            <div
+              key={g.id}
+              className="self-start w-full bg-white rounded-2xl border border-[#E5E0D8] shadow-[0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden"
+            >
+              {/* Parent product */}
+              <button
+                type="button"
+                onClick={() => toggleGroup(g.id)}
+                className="w-full min-h-[56px] flex items-center gap-2 px-2.5 py-2.5 text-left active:bg-ivory/80 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-[13px] text-charcoal leading-tight truncate">
+                    {g.name}
+                  </div>
+
+                  <div className="text-[11px] text-muted mt-0.5">
+                    {row.childCount
+                      ? `${row.childCount} sizes · Tap to ${open ? 'hide' : 'see'}`
+                      : 'No sizes yet'}
+                  </div>
+                </div>
+
+                {/* Circular expand / collapse button */}
+                <span className="w-7 h-7 rounded-full bg-emerald text-white flex items-center justify-center shrink-0">
+                  {open ? (
+                    <ChevronDown size={15} strokeWidth={2.5} />
+                  ) : (
+                    <ChevronRight size={15} strokeWidth={2.5} />
+                  )}
+                </span>
+              </button>
+
+              {/* Expandable child products */}
+              {open && row.children.length > 0 && (
+                <div className="border-t border-border bg-ivory/30 p-1.5 space-y-1.5">
+                  {row.children.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => addProduct(c)}
+                      className="w-full bg-white rounded-xl border border-[#E5E0D8] px-2 py-2 text-left active:scale-[0.98] transition-transform flex items-center gap-1.5 min-h-[48px]"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-[12px] text-charcoal leading-tight truncate">
+                          {c.bottleSizeMl ? `${c.bottleSizeMl} ml` : c.name}
+                        </div>
+
+                        <div className="text-[11px] text-muted mt-0.5 truncate">
+                          {formatINR(c.unitPrice)}
+                        </div>
                       </div>
-                      <div className="text-[12px] text-muted mt-0.5 truncate">
-                        {p?.productType === 'PER_ML'
-                          ? `${formatINR(p?.unitPrice)}/ml`
-                          : formatINR(p?.unitPrice)}
-                      </div>
-                    </div>
-                    <span className="w-7 h-7 rounded-full bg-emerald text-white flex items-center justify-center shrink-0">
-                      <Plus size={14} strokeWidth={2.5} />
-                    </span>
-                  </button>
-                ))}
+
+                      <span className="w-6 h-6 rounded-full bg-emerald text-white flex items-center justify-center shrink-0">
+                        <Plus size={12} strokeWidth={2.5} />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        const p = row.product;
+
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => addProduct(p)}
+            className="self-start w-full bg-white rounded-2xl border border-[#E5E0D8] shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-3 py-2.5 text-left active:scale-[0.98] transition-transform flex items-center gap-2 min-h-[56px]"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-[13px] text-charcoal leading-tight truncate">
+                {p?.name || 'Product'}
               </div>
 
-              {/* Desktop: list rows */}
-              <div className="hidden md:block space-y-2">
-                {filteredProducts.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center gap-3 bg-white rounded-2xl border border-border px-3 py-3"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-charcoal truncate">{p.name}</div>
-                      <div className="text-sm text-muted">
-                        {p.productType === 'PER_ML'
-                          ? `${formatINR(p.unitPrice)} / ml`
-                          : formatINR(p.unitPrice)}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => addProduct(p)}
-                      className="shrink-0 w-9 h-9 rounded-full bg-emerald text-white flex items-center justify-center active:bg-emerald-dark"
-                    >
-                      <Plus size={18} strokeWidth={2.5} />
-                    </button>
-                  </div>
-                ))}
+              <div className="text-[12px] text-muted mt-0.5 truncate">
+                {p?.productType === 'PER_ML'
+                  ? `${formatINR(p?.unitPrice)}/ml`
+                  : formatINR(p?.unitPrice)}
               </div>
-            </>
-          )}
-        </div>
+            </div>
+
+            <span className="w-7 h-7 rounded-full bg-emerald text-white flex items-center justify-center shrink-0">
+              <Plus size={14} strokeWidth={2.5} />
+            </span>
+          </button>
+        );
+      })}
+
+    </div>
+  )}
+</div>
+
       </div>
 
       {/* ── Desktop cart panel (unchanged structure) ── */}

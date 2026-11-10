@@ -57,14 +57,27 @@ model Product {
   categoryId  String
   category    Category    @relation(fields: [categoryId], references: [id])
   productType ProductType
-  // For PER_ML: price per ml in paise. For FIXED/SPRAY base: unit price in paise
-  unitPrice   Int
+  // For PER_ML: selling price per ml in paise. For FIXED/SPRAY children: unit selling price in paise
+  // Group (parent) products use 0 — not sold directly
+  unitPrice   Int         @default(0)
+  // Optional wholesale / purchase cost in paise (same unit as unitPrice). Owner-only; null = unknown
+  purchasePrice Int?
   unit        String      // "ml", "piece", "packet"
   isActive    Boolean     @default(true)
+  // Parent/child for spray size groups: parent is heading only (isGroup=true), children are billable sizes
+  parentId    String?
+  parent      Product?    @relation("ProductTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Product[]   @relation("ProductTree")
+  isGroup     Boolean     @default(false)
+  bottleSizeMl Int?       // e.g. 10, 20, 30 for spray size variants
+  sortOrder   Int         @default(0)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   invoiceItems InvoiceItem[]
+
+  @@index([parentId])
+  @@index([categoryId, isActive])
 }
 
 model Customer {
@@ -111,6 +124,8 @@ model InvoiceItem {
   unit            String
   quantity        Decimal  @db.Decimal(12, 3) // ml or pieces
   unitPricePaise  Int
+  // Snapshot of product purchase/wholesale cost at sale time (paise per unit); null if unknown
+  purchasePricePaise Int?
   lineTotalPaise  Int
   discountPaise   Int      @default(0)
   // Spray details (optional)

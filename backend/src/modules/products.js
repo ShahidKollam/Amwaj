@@ -7,6 +7,24 @@ const router = Router();
 
 router.use(requireAuth);
 
+/** Strip purchasePrice for non-owners so staff never see cost */
+function sanitizeProduct(product, isOwner) {
+  if (!product) return product;
+  if (Array.isArray(product.children)) {
+    product = {
+      ...product,
+      children: product.children.map((c) => sanitizeProduct(c, isOwner)),
+    };
+  }
+  if (isOwner) return product;
+  const { purchasePrice, ...rest } = product;
+  return rest;
+}
+
+function sanitizeProducts(list, isOwner) {
+  return list.map((p) => sanitizeProduct(p, isOwner));
+}
+
 router.get('/categories', async (req, res, next) => {
   try {
     const categories = await prisma.category.findMany({
@@ -26,15 +44,21 @@ router.get('/', async (req, res, next) => {
     const where = {};
     if (categoryId) where.categoryId = categoryId;
     if (active !== 'false') where.isActive = true;
-    if (search) {
-      where.name = { contains: search };
+    if (search && String(search).trim()) {
+      const q = String(search).trim();
+      where.name = { contains: q, mode: 'insensitive' };
     }
     const products = await prisma.product.findMany({
       where,
-      include: { category: true },
-      orderBy: { name: 'asc' },
+      include: {
+        category: true,
+        parent: { select: { id: true, name: true, isGroup: true } },
+        _count: { select: { children: true } },
+      },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
-    res.json(products);
+    const isOwner = req.user?.role === 'OWNER';
+    res.json(sanitizeProducts(products, isOwner));
   } catch (err) {
     next(err);
   }
@@ -44,16 +68,57 @@ const productSchema = z.object({
   name: z.string().min(1),
   categoryId: z.string(),
   productType: z.enum(['PER_ML', 'SPRAY', 'FIXED']),
-  unitPrice: z.number().int().positive(), // paise
+  // Group parents may use 0; sellable must be positive (validated below)
+  unitPrice: z.number().int().nonnegative(),
+  purchasePrice: z.number().int().nonnegative().nullable().optional(),
   unit: z.string().min(1),
   isActive: z.boolean().optional(),
+  parentId: z.string().nullable().optional(),
+  isGroup: z.boolean().optional(),
+  bottleSizeMl: z.number().int().positive().nullable().optional(),
+  sortOrder: z.number().int().optional(),
 });
+
+function assertSellablePrice(data) {
+  const isGroup = data.isGroup === true;
+  if (!isGroup && data.unitPrice != null && data.unitPrice <= 0) {
+    const err = new Error('Selling price must be greater than zero for sellable products');
+    err.status = 400;
+    throw err;
+  }
+  if (isGroup) {
+    // Groups are headings only
+    data.unitPrice = data.unitPrice ?? 0;
+    data.parentId = null;
+  }
+}
 
 router.post('/', async (req, res, next) => {
   try {
     const data = productSchema.parse(req.body);
-    const product = await prisma.product.create({ data });
-    res.status(201).json(product);
+    assertSellablePrice(data);
+    if (req.user?.role !== 'OWNER') {
+      delete data.purchasePrice;
+    }
+    if (data.parentId) {
+      const parent = await prisma.product.findUnique({ where: { id: data.parentId } });
+      if (!parent) {
+        return res.status(400).json({ error: 'Parent product not found' });
+      }
+      if (parent.parentId) {
+        return res.status(400).json({ error: 'Cannot nest under a child product (max one level)' });
+      }
+      // Child inherits category/type defaults if needed
+      data.isGroup = false;
+    }
+    const product = await prisma.product.create({
+      data,
+      include: {
+        category: true,
+        parent: { select: { id: true, name: true, isGroup: true } },
+      },
+    });
+    res.status(201).json(sanitizeProduct(product, req.user?.role === 'OWNER'));
   } catch (err) {
     next(err);
   }
@@ -62,12 +127,38 @@ router.post('/', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
   try {
     const data = productSchema.partial().parse(req.body);
+    if (data.isGroup !== undefined || data.unitPrice !== undefined) {
+      const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
+      const merged = {
+        isGroup: data.isGroup ?? existing?.isGroup,
+        unitPrice: data.unitPrice ?? existing?.unitPrice,
+      };
+      assertSellablePrice(merged);
+      if (merged.isGroup) data.unitPrice = merged.unitPrice ?? 0;
+    }
+    if (req.user?.role !== 'OWNER') {
+      delete data.purchasePrice;
+    }
+    if (data.parentId) {
+      if (data.parentId === req.params.id) {
+        return res.status(400).json({ error: 'Product cannot be its own parent' });
+      }
+      const parent = await prisma.product.findUnique({ where: { id: data.parentId } });
+      if (!parent) return res.status(400).json({ error: 'Parent product not found' });
+      if (parent.parentId) {
+        return res.status(400).json({ error: 'Cannot nest under a child product' });
+      }
+      data.isGroup = false;
+    }
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data,
-      include: { category: true },
+      include: {
+        category: true,
+        parent: { select: { id: true, name: true, isGroup: true } },
+      },
     });
-    res.json(product);
+    res.json(sanitizeProduct(product, req.user?.role === 'OWNER'));
   } catch (err) {
     next(err);
   }
@@ -76,6 +167,12 @@ router.put('/:id', async (req, res, next) => {
 /** Hard delete product (permanent). Fails if referenced by invoice items — returns clear error. */
 router.delete('/:id', async (req, res, next) => {
   try {
+    const childCount = await prisma.product.count({ where: { parentId: req.params.id } });
+    if (childCount > 0) {
+      return res.status(409).json({
+        error: 'Cannot delete: this group has size variants. Remove or reassign children first.',
+      });
+    }
     await prisma.product.delete({ where: { id: req.params.id } });
     res.json({ ok: true, id: req.params.id });
   } catch (err) {

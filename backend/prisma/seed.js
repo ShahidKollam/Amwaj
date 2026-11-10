@@ -1,3 +1,13 @@
+/**
+ * Amwaj POS — clean seed for testing
+ * Creates: OWNER admin, one STAFF, categories, products (with optional purchase rates),
+ * customers, shop settings. Does NOT create invoices (you bill live for real reports/P&L).
+ *
+ * Run after wipe:
+ *   npx prisma db push
+ *   npm run db:seed
+ *   # or: node prisma/seed.js
+ */
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
@@ -15,10 +25,34 @@ async function main() {
 
   const admin = await prisma.user.upsert({
     where: { username },
-    update: {},
+    update: {
+      name,
+      passwordHash,
+      role: 'OWNER',
+      isActive: true,
+    },
     create: { name, username, passwordHash, role: 'OWNER' },
   });
-  console.log('Seeded admin:', admin.username);
+  console.log('Admin (OWNER):', admin.username, '/ password from SEED_ADMIN_PASSWORD or amwaj2024');
+
+  // Staff for role testing (no P&L, no purchase rate)
+  const staffHash = await bcrypt.hash('staff1234', 12);
+  const staff = await prisma.user.upsert({
+    where: { username: 'staff' },
+    update: {
+      name: 'Counter Staff',
+      passwordHash: staffHash,
+      role: 'STAFF',
+      isActive: true,
+    },
+    create: {
+      name: 'Counter Staff',
+      username: 'staff',
+      passwordHash: staffHash,
+      role: 'STAFF',
+    },
+  });
+  console.log('Staff (STAFF):', staff.username, '/ staff1234');
 
   const categoryDefs = [
     { name: 'Attar', sortOrder: 1 },
@@ -30,7 +64,7 @@ async function main() {
   for (const cat of categoryDefs) {
     await prisma.category.upsert({
       where: { name: cat.name },
-      update: { sortOrder: cat.sortOrder },
+      update: { sortOrder: cat.sortOrder, isActive: true },
       create: cat,
     });
   }
@@ -41,81 +75,196 @@ async function main() {
   const bakhoor = await prisma.category.findUnique({ where: { name: 'Bakhoor' } });
   const accessories = await prisma.category.findUnique({ where: { name: 'Accessories' } });
 
+  // unitPrice / purchasePrice in paise (₹1 = 100). purchasePrice optional (owner P&L).
+  // PER_ML = selling per ml; SPRAY/FIXED = per piece/packet.
   const products = [
-    { name: 'Amber Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 9000, unit: 'ml' },
-    { name: 'Mogra Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 8500, unit: 'ml' },
-    { name: 'Rose Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 11000, unit: 'ml' },
-    { name: 'Jasmine Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 9500, unit: 'ml' },
-    { name: 'Kewra Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 8000, unit: 'ml' },
-    { name: 'Hina Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 10000, unit: 'ml' },
-    { name: 'Shamama Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 12000, unit: 'ml' },
-    { name: 'Motia Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 8800, unit: 'ml' },
-    { name: 'Khus Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 9200, unit: 'ml' },
-    { name: 'Sandal Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 15000, unit: 'ml' },
-    { name: 'White Musk Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 10500, unit: 'ml' },
-    { name: 'Black Musk Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 11500, unit: 'ml' },
-    { name: 'Royal Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 10000, unit: 'ml' },
-    { name: 'White Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 12000, unit: 'ml' },
-    { name: 'Hindi Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 18000, unit: 'ml' },
-    { name: 'Cambodi Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 22000, unit: 'ml' },
-    { name: 'Assam Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 16000, unit: 'ml' },
-    { name: 'Thai Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 14000, unit: 'ml' },
-    { name: 'Oud Maliki', categoryId: oud.id, productType: 'PER_ML', unitPrice: 25000, unit: 'ml' },
-    { name: 'Oud Special', categoryId: oud.id, productType: 'PER_ML', unitPrice: 13000, unit: 'ml' },
-    { name: 'Burning Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 11000, unit: 'ml' },
-    { name: 'Dehn Al Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 30000, unit: 'ml' },
-    { name: 'Oud Muattar', categoryId: oud.id, productType: 'PER_ML', unitPrice: 9500, unit: 'ml' },
-    { name: 'Premium Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 20000, unit: 'ml' },
-    { name: 'Arabian Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 17000, unit: 'ml' },
-    { name: 'Oud Spray 100ml', categoryId: spray.id, productType: 'SPRAY', unitPrice: 180000, unit: 'piece' },
-    { name: 'Musk Spray 100ml', categoryId: spray.id, productType: 'SPRAY', unitPrice: 150000, unit: 'piece' },
-    { name: 'Rose Spray 100ml', categoryId: spray.id, productType: 'SPRAY', unitPrice: 140000, unit: 'piece' },
-    { name: 'Amber Spray 50ml', categoryId: spray.id, productType: 'SPRAY', unitPrice: 90000, unit: 'piece' },
-    { name: 'White Oud Spray', categoryId: spray.id, productType: 'SPRAY', unitPrice: 200000, unit: 'piece' },
-    { name: 'Hindi Oud Spray', categoryId: spray.id, productType: 'SPRAY', unitPrice: 250000, unit: 'piece' },
-    { name: 'Attar Mix Spray', categoryId: spray.id, productType: 'SPRAY', unitPrice: 120000, unit: 'piece' },
-    { name: 'Room Freshener', categoryId: spray.id, productType: 'SPRAY', unitPrice: 80000, unit: 'piece' },
-    { name: 'Car Spray Oud', categoryId: spray.id, productType: 'SPRAY', unitPrice: 60000, unit: 'piece' },
-    { name: 'Body Mist Sandal', categoryId: spray.id, productType: 'SPRAY', unitPrice: 110000, unit: 'piece' },
-    { name: 'Bakhoor Classic', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 45000, unit: 'packet' },
-    { name: 'Bakhoor Royal', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 75000, unit: 'packet' },
-    { name: 'Bakhoor Mabsoos', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 55000, unit: 'packet' },
-    { name: 'Bakhoor Al Arabian', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 65000, unit: 'packet' },
-    { name: 'Incense Cones', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 25000, unit: 'packet' },
-    { name: 'Oud Chips 25g', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 120000, unit: 'packet' },
-    { name: 'Oud Chips 50g', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 220000, unit: 'packet' },
-    { name: 'Bukhoor Premium Box', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 150000, unit: 'piece' },
-    { name: 'Bottle 3ml Empty', categoryId: accessories.id, productType: 'FIXED', unitPrice: 1500, unit: 'piece' },
-    { name: 'Bottle 6ml Empty', categoryId: accessories.id, productType: 'FIXED', unitPrice: 2500, unit: 'piece' },
-    { name: 'Bottle 12ml Empty', categoryId: accessories.id, productType: 'FIXED', unitPrice: 4000, unit: 'piece' },
-    { name: 'Premium Bottle 100ml', categoryId: accessories.id, productType: 'FIXED', unitPrice: 25000, unit: 'piece' },
-    { name: 'Roller Bottle 10ml', categoryId: accessories.id, productType: 'FIXED', unitPrice: 3500, unit: 'piece' },
-    { name: 'Spray Atomizer 30ml', categoryId: accessories.id, productType: 'FIXED', unitPrice: 8000, unit: 'piece' },
-    { name: 'Spray Atomizer 50ml', categoryId: accessories.id, productType: 'FIXED', unitPrice: 12000, unit: 'piece' },
-    { name: 'Gift Box Small', categoryId: accessories.id, productType: 'FIXED', unitPrice: 5000, unit: 'piece' },
-    { name: 'Gift Box Large', categoryId: accessories.id, productType: 'FIXED', unitPrice: 12000, unit: 'piece' },
+    // Attar (per ml) — sell / cost
+    { name: 'Amber Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 9000, purchasePrice: 4500, unit: 'ml' },
+    { name: 'Mogra Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 8500, purchasePrice: 4200, unit: 'ml' },
+    { name: 'Rose Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 11000, purchasePrice: 5500, unit: 'ml' },
+    { name: 'Jasmine Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 9500, purchasePrice: 4800, unit: 'ml' },
+    { name: 'Kewra Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 8000, purchasePrice: 4000, unit: 'ml' },
+    { name: 'Hina Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 10000, purchasePrice: 5000, unit: 'ml' },
+    { name: 'Shamama Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 12000, purchasePrice: 6000, unit: 'ml' },
+    { name: 'Motia Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 8800, purchasePrice: 4400, unit: 'ml' },
+    { name: 'Khus Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 9200, purchasePrice: 4600, unit: 'ml' },
+    { name: 'Sandal Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 15000, purchasePrice: 7500, unit: 'ml' },
+    { name: 'White Musk Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 10500, purchasePrice: 5200, unit: 'ml' },
+    { name: 'Black Musk Attar', categoryId: attar.id, productType: 'PER_ML', unitPrice: 11500, purchasePrice: 5800, unit: 'ml' },
+
+    // Oud (per ml)
+    { name: 'Royal Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 10000, purchasePrice: 5000, unit: 'ml' },
+    { name: 'White Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 12000, purchasePrice: 6000, unit: 'ml' },
+    { name: 'Hindi Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 18000, purchasePrice: 9000, unit: 'ml' },
+    { name: 'Cambodi Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 22000, purchasePrice: 11000, unit: 'ml' },
+    { name: 'Assam Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 16000, purchasePrice: 8000, unit: 'ml' },
+    { name: 'Thai Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 14000, purchasePrice: 7000, unit: 'ml' },
+    { name: 'Oud Maliki', categoryId: oud.id, productType: 'PER_ML', unitPrice: 25000, purchasePrice: 12500, unit: 'ml' },
+    { name: 'Oud Special', categoryId: oud.id, productType: 'PER_ML', unitPrice: 13000, purchasePrice: 6500, unit: 'ml' },
+    { name: 'Burning Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 11000, purchasePrice: 5500, unit: 'ml' },
+    { name: 'Dehn Al Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 30000, purchasePrice: 15000, unit: 'ml' },
+    { name: 'Oud Muattar', categoryId: oud.id, productType: 'PER_ML', unitPrice: 9500, purchasePrice: 4800, unit: 'ml' },
+    { name: 'Premium Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 20000, purchasePrice: 10000, unit: 'ml' },
+    { name: 'Arabian Oud', categoryId: oud.id, productType: 'PER_ML', unitPrice: 17000, purchasePrice: 8500, unit: 'ml' },
+
+    // Bakhoor
+    { name: 'Bakhoor Classic', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 45000, purchasePrice: 22000, unit: 'packet' },
+    { name: 'Bakhoor Royal', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 75000, purchasePrice: 38000, unit: 'packet' },
+    { name: 'Bakhoor Mabsoos', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 55000, purchasePrice: 28000, unit: 'packet' },
+    { name: 'Bakhoor Al Arabian', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 65000, purchasePrice: 32000, unit: 'packet' },
+    { name: 'Incense Cones', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 25000, purchasePrice: 12000, unit: 'packet' },
+    { name: 'Oud Chips 25g', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 120000, purchasePrice: 60000, unit: 'packet' },
+    { name: 'Oud Chips 50g', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 220000, purchasePrice: 110000, unit: 'packet' },
+    { name: 'Bukhoor Premium Box', categoryId: bakhoor.id, productType: 'FIXED', unitPrice: 150000, purchasePrice: 75000, unit: 'piece' },
+
+    // Accessories — some without purchase price (optional)
+    { name: 'Bottle 3ml Empty', categoryId: accessories.id, productType: 'FIXED', unitPrice: 1500, purchasePrice: 600, unit: 'piece' },
+    { name: 'Bottle 6ml Empty', categoryId: accessories.id, productType: 'FIXED', unitPrice: 2500, purchasePrice: 1000, unit: 'piece' },
+    { name: 'Bottle 12ml Empty', categoryId: accessories.id, productType: 'FIXED', unitPrice: 4000, purchasePrice: 1500, unit: 'piece' },
+    { name: 'Premium Bottle 100ml', categoryId: accessories.id, productType: 'FIXED', unitPrice: 25000, purchasePrice: 10000, unit: 'piece' },
+    { name: 'Roller Bottle 10ml', categoryId: accessories.id, productType: 'FIXED', unitPrice: 3500, purchasePrice: 1400, unit: 'piece' },
+    { name: 'Spray Atomizer 30ml', categoryId: accessories.id, productType: 'FIXED', unitPrice: 8000, purchasePrice: 3200, unit: 'piece' },
+    { name: 'Spray Atomizer 50ml', categoryId: accessories.id, productType: 'FIXED', unitPrice: 12000, purchasePrice: 4800, unit: 'piece' },
+    { name: 'Gift Box Small', categoryId: accessories.id, productType: 'FIXED', unitPrice: 5000, purchasePrice: 2000, unit: 'piece' },
+    { name: 'Gift Box Large', categoryId: accessories.id, productType: 'FIXED', unitPrice: 12000, purchasePrice: 5000, unit: 'piece' },
     { name: 'Velvet Pouch', categoryId: accessories.id, productType: 'FIXED', unitPrice: 3000, unit: 'piece' },
     { name: 'Dropper Cap', categoryId: accessories.id, productType: 'FIXED', unitPrice: 1000, unit: 'piece' },
     { name: 'Funnel Plastic', categoryId: accessories.id, productType: 'FIXED', unitPrice: 500, unit: 'piece' },
     { name: 'Sample Vial 1ml', categoryId: accessories.id, productType: 'FIXED', unitPrice: 800, unit: 'piece' },
-    { name: 'Label Set (50)', categoryId: accessories.id, productType: 'FIXED', unitPrice: 15000, unit: 'packet' },
-    { name: 'Electric Burner', categoryId: accessories.id, productType: 'FIXED', unitPrice: 45000, unit: 'piece' },
-    { name: 'Charcoal Tablets', categoryId: accessories.id, productType: 'FIXED', unitPrice: 8000, unit: 'packet' },
-    { name: 'Bakhoor Burner Metal', categoryId: accessories.id, productType: 'FIXED', unitPrice: 35000, unit: 'piece' },
+    { name: 'Label Set (50)', categoryId: accessories.id, productType: 'FIXED', unitPrice: 15000, purchasePrice: 6000, unit: 'packet' },
+    { name: 'Electric Burner', categoryId: accessories.id, productType: 'FIXED', unitPrice: 45000, purchasePrice: 25000, unit: 'piece' },
+    { name: 'Charcoal Tablets', categoryId: accessories.id, productType: 'FIXED', unitPrice: 8000, purchasePrice: 3500, unit: 'packet' },
+    { name: 'Bakhoor Burner Metal', categoryId: accessories.id, productType: 'FIXED', unitPrice: 35000, purchasePrice: 18000, unit: 'piece' },
     { name: 'Tester Strip Pack', categoryId: accessories.id, productType: 'FIXED', unitPrice: 2000, unit: 'packet' },
-    { name: 'Glass Dropper Bottle', categoryId: accessories.id, productType: 'FIXED', unitPrice: 6000, unit: 'piece' },
-    { name: 'Travel Case', categoryId: accessories.id, productType: 'FIXED', unitPrice: 18000, unit: 'piece' },
+    { name: 'Glass Dropper Bottle', categoryId: accessories.id, productType: 'FIXED', unitPrice: 6000, purchasePrice: 2500, unit: 'piece' },
+    { name: 'Travel Case', categoryId: accessories.id, productType: 'FIXED', unitPrice: 18000, purchasePrice: 8000, unit: 'piece' },
   ];
 
   let createdProducts = 0;
-  for (const p of products) {
+  let updatedProducts = 0;
+  async function upsertProduct(p) {
     const existing = await prisma.product.findFirst({ where: { name: p.name } });
     if (!existing) {
       await prisma.product.create({ data: p });
       createdProducts += 1;
+    } else {
+      await prisma.product.update({
+        where: { id: existing.id },
+        data: {
+          categoryId: p.categoryId,
+          productType: p.productType,
+          unitPrice: p.unitPrice ?? 0,
+          purchasePrice: p.purchasePrice ?? null,
+          unit: p.unit,
+          isActive: true,
+          isGroup: p.isGroup ?? false,
+          parentId: p.parentId ?? null,
+          bottleSizeMl: p.bottleSizeMl ?? null,
+          sortOrder: p.sortOrder ?? 0,
+        },
+      });
+      updatedProducts += 1;
     }
   }
-  console.log('Products defined:', products.length, 'newly created:', createdProducts);
+
+  for (const p of products) {
+    await upsertProduct(p);
+  }
+
+  // Spray parent groups + size children (billable sizes only)
+  const sprayGroups = [
+    {
+      name: 'Zabaya Spray',
+      sizes: [
+        { ml: 10, sell: 15000, cost: 7000 },
+        { ml: 20, sell: 28000, cost: 13000 },
+        { ml: 30, sell: 40000, cost: 18000 },
+      ],
+    },
+    {
+      name: 'Amber Spray',
+      sizes: [
+        { ml: 30, sell: 60000, cost: 28000 },
+        { ml: 50, sell: 90000, cost: 45000 },
+        { ml: 100, sell: 160000, cost: 80000 },
+      ],
+    },
+    {
+      name: 'Oud Spray',
+      sizes: [
+        { ml: 30, sell: 70000, cost: 35000 },
+        { ml: 50, sell: 110000, cost: 55000 },
+        { ml: 100, sell: 180000, cost: 90000 },
+      ],
+    },
+    {
+      name: 'Musk Spray',
+      sizes: [
+        { ml: 50, sell: 90000, cost: 45000 },
+        { ml: 100, sell: 150000, cost: 75000 },
+      ],
+    },
+    {
+      name: 'Hindi Oud Spray',
+      sizes: [
+        { ml: 30, sell: 100000, cost: 50000 },
+        { ml: 50, sell: 160000, cost: 80000 },
+        { ml: 100, sell: 250000, cost: 125000 },
+      ],
+    },
+    {
+      name: 'Rose Spray',
+      sizes: [
+        { ml: 50, sell: 80000, cost: 40000 },
+        { ml: 100, sell: 140000, cost: 70000 },
+      ],
+    },
+  ];
+
+  for (const g of sprayGroups) {
+    await upsertProduct({
+      name: g.name,
+      categoryId: spray.id,
+      productType: 'SPRAY',
+      unitPrice: 0,
+      unit: 'piece',
+      isGroup: true,
+      sortOrder: 0,
+    });
+    const parent = await prisma.product.findFirst({ where: { name: g.name } });
+    if (!parent) continue;
+    for (const s of g.sizes) {
+      await upsertProduct({
+        name: `${g.name} ${s.ml}ml`,
+        categoryId: spray.id,
+        productType: 'SPRAY',
+        unitPrice: s.sell,
+        purchasePrice: s.cost,
+        unit: 'piece',
+        isGroup: false,
+        parentId: parent.id,
+        bottleSizeMl: s.ml,
+        sortOrder: s.ml,
+      });
+    }
+  }
+
+  // Standalone sprays (no group)
+  for (const p of [
+    { name: 'Room Freshener 250ml', unitPrice: 80000, purchasePrice: 40000, bottleSizeMl: 250 },
+    { name: 'Car Spray Oud 50ml', unitPrice: 60000, purchasePrice: 30000, bottleSizeMl: 50 },
+    { name: 'Body Mist Sandal 100ml', unitPrice: 110000, purchasePrice: 55000, bottleSizeMl: 100 },
+  ]) {
+    await upsertProduct({
+      ...p,
+      categoryId: spray.id,
+      productType: 'SPRAY',
+      unit: 'piece',
+      isGroup: false,
+    });
+  }
+
+  console.log('Products upserted | created:', createdProducts, '| updated:', updatedProducts);
 
   const customers = [
     { name: 'Ravi Kumar', mobile: '9876543210', notes: 'Prefers Hindi Oud' },
@@ -132,12 +281,20 @@ async function main() {
     { name: 'Meera Thomas', mobile: '9888877777', notes: null },
   ];
 
-  const customerRecords = [];
+  let customerCount = 0;
   for (const c of customers) {
     const existing = await prisma.customer.findUnique({ where: { mobile: c.mobile } });
-    customerRecords.push(existing || (await prisma.customer.create({ data: c })));
+    if (!existing) {
+      await prisma.customer.create({ data: c });
+      customerCount += 1;
+    } else {
+      await prisma.customer.update({
+        where: { id: existing.id },
+        data: { name: c.name, notes: c.notes },
+      });
+    }
   }
-  console.log('Customers:', customerRecords.length);
+  console.log('Customers upserted; newly created:', customerCount);
 
   let settings = await prisma.shopSettings.findFirst();
   if (!settings) {
@@ -150,69 +307,14 @@ async function main() {
         nextInvoiceSeq: 1,
       },
     });
-  }
-
-  const invoiceCount = await prisma.invoice.count();
-  if (invoiceCount === 0) {
-    const allProducts = await prisma.product.findMany({ take: 20 });
-    const pick = (i) => allProducts[i % Math.max(allProducts.length, 1)];
-    const sampleBills = [
-      { customerId: customerRecords[0]?.id, items: [{ p: pick(0), qty: 3 }, { p: pick(1), qty: 6 }], pay: 'CASH' },
-      { customerId: customerRecords[1]?.id, items: [{ p: pick(2), qty: 5 }, { p: pick(5), qty: 1 }], pay: 'UPI' },
-      { customerId: null, items: [{ p: pick(4), qty: 12 }], pay: 'CASH' },
-      { customerId: customerRecords[2]?.id, items: [{ p: pick(3), qty: 4 }, { p: pick(8), qty: 1 }, { p: pick(10), qty: 2 }], pay: 'SPLIT' },
-      { customerId: customerRecords[4]?.id, items: [{ p: pick(6), qty: 10 }, { p: pick(7), qty: 5 }], pay: 'UPI' },
-    ];
-
-    let seq = settings.nextInvoiceSeq || 1;
-    for (const bill of sampleBills) {
-      const lineItems = bill.items.filter((x) => x.p).map((x) => {
-        const unit = x.p.unitPrice;
-        const line = Math.round(Number(x.qty) * unit);
-        return {
-          productId: x.p.id,
-          productName: x.p.name,
-          productType: x.p.productType,
-          unit: x.p.unit,
-          quantity: x.qty,
-          unitPricePaise: unit,
-          lineTotalPaise: line,
-          discountPaise: 0,
-        };
-      });
-      if (!lineItems.length) continue;
-      const subtotal = lineItems.reduce((s, it) => s + it.lineTotalPaise, 0);
-      const invoiceNumber = (settings.invoicePrefix || 'AMW') + '-' + String(seq).padStart(5, '0');
-      seq += 1;
-      const payments =
-        bill.pay === 'SPLIT'
-          ? [
-              { method: 'CASH', amountPaise: Math.floor(subtotal / 2) },
-              { method: 'UPI', amountPaise: subtotal - Math.floor(subtotal / 2) },
-            ]
-          : [{ method: bill.pay, amountPaise: subtotal }];
-
-      await prisma.invoice.create({
-        data: {
-          invoiceNumber,
-          customerId: bill.customerId || null,
-          createdById: admin.id,
-          subtotalPaise: subtotal,
-          additionalPaise: 0,
-          discountPaise: 0,
-          totalPaise: subtotal,
-          items: { create: lineItems },
-          payments: { create: payments },
-        },
-      });
-    }
-    await prisma.shopSettings.update({ where: { id: settings.id }, data: { nextInvoiceSeq: seq } });
-    console.log('Sample invoices created');
+    console.log('Shop settings created');
   } else {
-    console.log('Invoices already exist, skipped sample history');
+    console.log('Shop settings kept (invoice seq not reset by seed)');
   }
 
-  console.log('Seed completed successfully.');
+  // No sample invoices — bill from the app so reports/P&L are real.
+  console.log('Seed completed. No fake bills. Create bills in POS to test History & Reports.');
+  console.log('Login: admin / amwaj2024  |  staff / staff1234');
 }
 
 main()

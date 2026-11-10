@@ -82,18 +82,49 @@ router.get('/reports/sales', requireOwner, async (req, res, next) => {
       });
     });
 
-    // Top items
+    // Cost & profit from snapped purchase prices (null purchase → excluded from cost)
+    let totalCost = 0;
+    let costKnown = false;
+    invoices.forEach((inv) => {
+      inv.items.forEach((it) => {
+        if (it.purchasePricePaise != null) {
+          costKnown = true;
+          totalCost += Math.round(Number(it.quantity) * it.purchasePricePaise);
+        }
+      });
+    });
+    const totalProfit = costKnown ? totalSales - totalCost : null;
+
+    // Top items with optional cost/profit
     const itemMap = {};
     invoices.forEach((inv) => {
       inv.items.forEach((it) => {
         if (!itemMap[it.productName]) {
-          itemMap[it.productName] = { name: it.productName, qty: 0, revenue: 0 };
+          itemMap[it.productName] = {
+            name: it.productName,
+            qty: 0,
+            revenue: 0,
+            cost: 0,
+            costKnown: false,
+          };
         }
-        itemMap[it.productName].qty += Number(it.quantity);
-        itemMap[it.productName].revenue += it.lineTotalPaise;
+        const row = itemMap[it.productName];
+        row.qty += Number(it.quantity);
+        row.revenue += it.lineTotalPaise;
+        if (it.purchasePricePaise != null) {
+          row.costKnown = true;
+          row.cost += Math.round(Number(it.quantity) * it.purchasePricePaise);
+        }
       });
     });
     const topItems = Object.values(itemMap)
+      .map((row) => ({
+        name: row.name,
+        qty: row.qty,
+        revenue: row.revenue,
+        costPaise: row.costKnown ? row.cost : null,
+        profitPaise: row.costKnown ? row.revenue - row.cost : null,
+      }))
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 10);
 
@@ -102,6 +133,9 @@ router.get('/reports/sales', requireOwner, async (req, res, next) => {
       billCount,
       averageBillPaise: avgBill,
       byPaymentMethod: byMethod,
+      totalCostPaise: costKnown ? totalCost : null,
+      totalProfitPaise: totalProfit,
+      costKnown,
       topItems,
     });
   } catch (err) {

@@ -132,6 +132,9 @@ export const api = {
       totalPages: data?.totalPages ?? 1,
       dayTotalPaise: data?.dayTotalPaise ?? 0,
       dayBillCount: data?.dayBillCount ?? 0,
+      dayCostPaise: data?.dayCostPaise ?? null,
+      dayProfitPaise: data?.dayProfitPaise ?? null,
+      dayCostKnown: data?.dayCostKnown ?? false,
     };
   },
   getInvoice: (id) => request(`/billing/${id}`),
