@@ -1,5 +1,5 @@
 import React from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { ShoppingCart, Package, Users, History, Settings } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -24,10 +24,19 @@ function AmwajMark({ size = 18 }) {
 
 export default function AppShell() {
   const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const onSettingsNav = (e) => {
+    // Already on Settings (any sub-section): go back to Settings menu
+    if (location.pathname === '/settings' || location.pathname.startsWith('/settings/')) {
+      e.preventDefault();
+      navigate('/settings', { replace: true, state: { settingsHome: Date.now() } });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-ivory flex flex-col md:flex-row">
-      {/* Desktop sidebar */}
       <aside className="hidden md:flex md:w-56 lg:w-64 flex-col bg-emerald text-white shrink-0">
         <div className="px-5 py-4 border-b border-white/10">
           <div className="flex items-center gap-2.5">
@@ -46,6 +55,7 @@ export default function AppShell() {
               key={to}
               to={to}
               end={end}
+              onClick={to === '/settings' ? onSettingsNav : undefined}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                   isActive
@@ -64,9 +74,7 @@ export default function AppShell() {
         </div>
       </aside>
 
-      {/* Main */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
-        {/* Mobile header — always visible across the app */}
         <header className="md:hidden sticky top-0 z-40 bg-emerald text-white px-4 py-2.5 flex items-center justify-between safe-top shadow-sm">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-7 h-7 rounded-lg bg-gold/20 flex items-center justify-center ring-1 ring-gold/25 shrink-0">
@@ -88,13 +96,13 @@ export default function AppShell() {
           <Outlet />
         </main>
 
-        {/* Mobile bottom nav — always visible */}
         <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-border flex justify-around items-center pt-1.5 pb-[calc(0.4rem+var(--safe-bottom))] shadow-[0_-4px_24px_rgba(6,75,60,0.06)]">
           {navItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
+              onClick={to === '/settings' ? onSettingsNav : undefined}
               className={({ isActive }) =>
                 `flex flex-col items-center gap-0.5 px-1.5 py-1 min-w-[52px] ${
                   isActive ? 'text-emerald' : 'text-muted'

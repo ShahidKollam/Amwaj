@@ -41,15 +41,12 @@ router.get('/me', requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
-/** Change own password — OWNER only (staff cannot change password) */
+/** Change own password — any signed-in user (owner or staff) */
 router.post('/change-password', requireAuth, async (req, res, next) => {
   try {
-    if (req.user.role !== 'OWNER') {
-      return res.status(403).json({ error: 'Staff cannot change password. Ask the owner.' });
-    }
     const schema = z.object({
       currentPassword: z.string().min(1),
-      newPassword: z.string().min(4),
+      newPassword: z.string().min(6),
     });
     const { currentPassword, newPassword } = schema.parse(req.body);
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
@@ -93,7 +90,7 @@ router.post('/users', requireAuth, requireOwner, async (req, res, next) => {
     const schema = z.object({
       name: z.string().min(1),
       username: z.string().min(2),
-      password: z.string().min(4),
+      password: z.string().min(6),
     });
     const data = schema.parse(req.body);
     const existing = await prisma.user.findUnique({ where: { username: data.username } });
@@ -128,7 +125,7 @@ router.patch('/users/:id', requireAuth, requireOwner, async (req, res, next) => 
   try {
     const schema = z.object({
       name: z.string().min(1).optional(),
-      password: z.string().min(4).optional(),
+      password: z.string().min(6).optional(),
       isActive: z.boolean().optional(),
     });
     const data = schema.parse(req.body);

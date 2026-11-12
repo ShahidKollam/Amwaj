@@ -52,7 +52,21 @@ router.get('/', async (req, res, next) => {
       where,
       include: {
         category: true,
-        parent: { select: { id: true, name: true, isGroup: true } },
+        parent: {
+          select: {
+            id: true,
+            name: true,
+            isGroup: true,
+            oilProductId: true,
+            waterProductId: true,
+            oilRatioPercent: true,
+            oilProduct: { select: { id: true, name: true, unitPrice: true, unit: true, stockQty: true } },
+            waterProduct: { select: { id: true, name: true, unitPrice: true, unit: true, stockQty: true } },
+          },
+        },
+        oilProduct: { select: { id: true, name: true, unitPrice: true, unit: true, stockQty: true } },
+        waterProduct: { select: { id: true, name: true, unitPrice: true, unit: true, stockQty: true } },
+        bottleProduct: { select: { id: true, name: true, unitPrice: true, unit: true, stockQty: true, bottleSizeMl: true } },
         _count: { select: { children: true } },
       },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
@@ -76,6 +90,13 @@ const productSchema = z.object({
   parentId: z.string().nullable().optional(),
   isGroup: z.boolean().optional(),
   bottleSizeMl: z.number().int().positive().nullable().optional(),
+  // Total on-hand qty (ml or pieces). Groups forced to 0.
+  stockQty: z.number().nonnegative().optional(),
+  // Composite spray recipe
+  oilProductId: z.string().nullable().optional(),
+  waterProductId: z.string().nullable().optional(),
+  bottleProductId: z.string().nullable().optional(),
+  oilRatioPercent: z.number().min(0).max(100).optional(),
   sortOrder: z.number().int().optional(),
 });
 
@@ -87,9 +108,11 @@ function assertSellablePrice(data) {
     throw err;
   }
   if (isGroup) {
-    // Groups are headings only
+    // Groups are headings only (recipe lives here: oil/water/ratio)
     data.unitPrice = data.unitPrice ?? 0;
     data.parentId = null;
+    data.stockQty = 0;
+    data.bottleProductId = null;
   }
 }
 
@@ -115,7 +138,19 @@ router.post('/', async (req, res, next) => {
       data,
       include: {
         category: true,
-        parent: { select: { id: true, name: true, isGroup: true } },
+        parent: {
+          select: {
+            id: true,
+            name: true,
+            isGroup: true,
+            oilProductId: true,
+            waterProductId: true,
+            oilRatioPercent: true,
+          },
+        },
+        oilProduct: { select: { id: true, name: true, unitPrice: true, unit: true, stockQty: true } },
+        waterProduct: { select: { id: true, name: true, unitPrice: true, unit: true, stockQty: true } },
+        bottleProduct: { select: { id: true, name: true, unitPrice: true, unit: true, stockQty: true, bottleSizeMl: true } },
       },
     });
     res.status(201).json(sanitizeProduct(product, req.user?.role === 'OWNER'));
@@ -155,7 +190,19 @@ router.put('/:id', async (req, res, next) => {
       data,
       include: {
         category: true,
-        parent: { select: { id: true, name: true, isGroup: true } },
+        parent: {
+          select: {
+            id: true,
+            name: true,
+            isGroup: true,
+            oilProductId: true,
+            waterProductId: true,
+            oilRatioPercent: true,
+          },
+        },
+        oilProduct: { select: { id: true, name: true, unitPrice: true, unit: true, stockQty: true } },
+        waterProduct: { select: { id: true, name: true, unitPrice: true, unit: true, stockQty: true } },
+        bottleProduct: { select: { id: true, name: true, unitPrice: true, unit: true, stockQty: true, bottleSizeMl: true } },
       },
     });
     res.json(sanitizeProduct(product, req.user?.role === 'OWNER'));

@@ -2,7 +2,7 @@
  * Offline bill queue + safe synchronisation.
  * - Saves bill locally before network
  * - Retries with same idempotency key (no duplicates)
- * - Never claims UPI verified offline
+ * - Offline accepts Cash and UPI the same way (recorded amounts; sync later)
  */
 import { api } from '../services/api';
 import {
@@ -69,13 +69,13 @@ export async function completeBillSafe(payload) {
   const body = { ...payload, idempotencyKey };
 
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    // Offline: cash-only style local record — never claim UPI verified
+    // Offline: accept Cash + UPI; full payload queued and synced later
     const pending = await queueBill(body);
     return {
       ok: false,
       pending: true,
       localId: pending.localId,
-      message: 'Saved offline. Will sync when online. UPI is not verified offline.',
+      message: 'Saved offline. Cash and UPI amounts will sync when online.',
     };
   }
 

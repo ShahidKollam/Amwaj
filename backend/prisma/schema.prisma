@@ -69,7 +69,26 @@ model Product {
   parent      Product?    @relation("ProductTree", fields: [parentId], references: [id], onDelete: SetNull)
   children    Product[]   @relation("ProductTree")
   isGroup     Boolean     @default(false)
-  bottleSizeMl Int?       // e.g. 10, 20, 30 for spray size variants
+  bottleSizeMl Int?       // e.g. 10, 20, 30, 40, 50, 100 for spray size variants
+  // On-hand stock: ml for PER_ML / spray-water, pieces for bottles & fixed. Groups use 0.
+  stockQty    Decimal     @default(0) @db.Decimal(14, 3)
+
+  // --- Composite spray recipe (usually on parent group; children inherit) ---
+  // Oil source (typically PER_ML attar/oud). Oil ml = bottleSizeMl * oilRatioPercent / 100
+  oilProductId    String?
+  oilProduct      Product?  @relation("SprayOilSource", fields: [oilProductId], references: [id], onDelete: SetNull)
+  oilConsumers    Product[] @relation("SprayOilSource")
+  // Water / diluent (Accessories FIXED, unit ml)
+  waterProductId  String?
+  waterProduct    Product?  @relation("SprayWaterSource", fields: [waterProductId], references: [id], onDelete: SetNull)
+  waterConsumers  Product[] @relation("SprayWaterSource")
+  // Empty bottle (Accessories FIXED, unit piece). Usually set on size child; can inherit by size match.
+  bottleProductId String?
+  bottleProduct   Product?  @relation("SprayBottleSource", fields: [bottleProductId], references: [id], onDelete: SetNull)
+  bottleConsumers Product[] @relation("SprayBottleSource")
+  // % of bottle volume filled with oil (rest is water). Default 50 = 50:50
+  oilRatioPercent Decimal   @default(50) @db.Decimal(5, 2)
+
   sortOrder   Int         @default(0)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -78,6 +97,9 @@ model Product {
 
   @@index([parentId])
   @@index([categoryId, isActive])
+  @@index([oilProductId])
+  @@index([waterProductId])
+  @@index([bottleProductId])
 }
 
 model Customer {

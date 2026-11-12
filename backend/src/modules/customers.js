@@ -94,12 +94,19 @@ router.post('/', async (req, res, next) => {
   try {
     const data = customerSchema.parse(req.body);
     const normalized = data.mobile.replace(/\D/g, '');
+    if (normalized.length < 10 || normalized.length > 15) {
+      return res.status(400).json({ error: 'Mobile number must be 10–15 digits' });
+    }
     const existing = await prisma.customer.findUnique({ where: { mobile: normalized } });
     if (existing) {
       return res.status(409).json({ error: 'Customer with this mobile already exists', customer: existing });
     }
     const customer = await prisma.customer.create({
-      data: { ...data, mobile: normalized },
+      data: {
+        name: data.name.trim(),
+        mobile: normalized,
+        notes: data.notes?.trim() || null,
+      },
     });
     res.status(201).json(customer);
   } catch (err) {

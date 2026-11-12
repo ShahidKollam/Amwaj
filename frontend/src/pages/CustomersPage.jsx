@@ -50,8 +50,14 @@ export default function CustomersPage() {
 
   return (
     <div className="p-4 max-w-3xl mx-auto pb-6">
-      <h1 className="text-xl font-bold text-charcoal mb-1">Customers</h1>
-      <p className="text-sm text-muted mb-3">{total} total</p>
+      <h1 className="text-xl font-bold text-charcoal mb-4">Customers</h1>
+
+      <DayFilter
+        value={date}
+        onChange={setDate}
+        allowAll
+        hint="Filter by joined date"
+      />
 
       <div className="relative mb-3">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={18} />
@@ -63,12 +69,11 @@ export default function CustomersPage() {
         />
       </div>
 
-      <DayFilter
-        value={date}
-        onChange={setDate}
-        allowAll
-        hint="Filter by joined date"
-      />
+      {/* Total — same quiet summary style as History day cards */}
+      <div className="card p-3 mb-4 flex items-center justify-between">
+        <span className="text-sm text-muted">Total customers</span>
+        <span className="text-lg font-bold text-charcoal tabular-nums">{total}</span>
+      </div>
 
       {error && (
         <div className="mb-3 text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">

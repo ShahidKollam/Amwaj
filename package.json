@@ -10,9 +10,16 @@
     "start:backend": "cd backend && npm start",
     "db:migrate": "cd backend && npx prisma migrate dev",
     "db:seed": "cd backend && node prisma/seed.js",
-    "db:generate": "cd backend && npx prisma generate"
+    "db:generate": "cd backend && npx prisma generate",
+    "db:reset": "cd backend && npx prisma migrate reset --force",
+    "db:push": "cd backend && npx prisma db push"
   },
-  "keywords": ["pos", "amwaj", "billing", "perfume"],
+  "keywords": [
+    "pos",
+    "amwaj",
+    "billing",
+    "perfume"
+  ],
   "author": "Amwaj",
   "license": "UNLICENSED"
 }

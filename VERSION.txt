@@ -1,11 +1,9 @@
-Amwaj POS v1.5.1 (20261110)
+Amwaj POS v1.6.9 (20261112)
 
-- UI: no icons on product items (category tabs only)
-- UI: 2 products per row on Bill + Products (mobile & desktop)
-- Spray groups: expand/collapse; size children in 2-col grid
-- List price only (no “sell” / “cost” labels on cards)
-- Purchase rate only in edit form (owner)
-- History: day total + bills only; P&L stays in Settings → Reports
-- Prior v1.5.0: spray parent/child, case-insensitive search, purchase snapshot
+- Flat sprays: no size-child products on Products page
+- Bill: tap spray → size picker (10–100 ml); 2-col grid like attar
+- Price = ₹/ml × size; stock oil+water+bottle by size
+- Seed: flat spray groups; bottles 10–100 ml in Accessories
+- Billing resolves bottle SKU by ml when no bottleProductId
 
-Deploy: replace frontend; restart if needed. No DB change from v1.5.0.
+Full reset recommended after upgrade: npm run db:reset

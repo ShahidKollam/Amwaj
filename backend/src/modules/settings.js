@@ -29,7 +29,7 @@ const settingsSchema = z.object({
   whatsappNumber: z.string().optional().nullable(),
 });
 
-router.put('/', async (req, res, next) => {
+router.put('/', requireOwner, async (req, res, next) => {
   try {
     const data = settingsSchema.parse(req.body);
     let settings = await prisma.shopSettings.findFirst();
@@ -68,7 +68,11 @@ router.get('/reports/sales', requireOwner, async (req, res, next) => {
 
     const invoices = await prisma.invoice.findMany({
       where,
-      include: { payments: true, items: true },
+      include: {
+        payments: true,
+        items: true,
+        customer: { select: { id: true, name: true, mobile: true } },
+      },
     });
 
     const totalSales = invoices.reduce((s, inv) => s + inv.totalPaise, 0);
@@ -128,6 +132,26 @@ router.get('/reports/sales', requireOwner, async (req, res, next) => {
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 10);
 
+    // Top customers by sales in range (walk-in grouped)
+    const custMap = {};
+    invoices.forEach((inv) => {
+      const key = inv.customerId || 'walk-in';
+      if (!custMap[key]) {
+        custMap[key] = {
+          customerId: inv.customerId || null,
+          name: inv.customer?.name || 'Walk-in',
+          mobile: inv.customer?.mobile || null,
+          billCount: 0,
+          revenue: 0,
+        };
+      }
+      custMap[key].billCount += 1;
+      custMap[key].revenue += inv.totalPaise;
+    });
+    const topCustomers = Object.values(custMap)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10);
+
     res.json({
       totalSalesPaise: totalSales,
       billCount,
@@ -137,6 +161,7 @@ router.get('/reports/sales', requireOwner, async (req, res, next) => {
       totalProfitPaise: totalProfit,
       costKnown,
       topItems,
+      topCustomers,
     });
   } catch (err) {
     next(err);

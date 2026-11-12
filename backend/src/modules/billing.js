@@ -22,6 +22,9 @@ const itemSchema = z.object({
   discountPaise: z.number().int().nonnegative().default(0),
   sprayBottleMl: z.number().int().positive().optional().nullable(),
   sprayOilMl: z.number().int().positive().optional().nullable(),
+  // Owner overrides for composite sprays (optional)
+  oilRatioPercent: z.number().min(0).max(100).optional().nullable(),
+  sprayIncludeBottle: z.boolean().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
 
@@ -67,10 +70,33 @@ router.post('/complete', async (req, res, next) => {
       ),
     ];
     const purchaseByProduct = {};
+    /** @type {Record<string, any>} */
+    const productById = {};
     if (productIds.length) {
       const prods = await prisma.product.findMany({
         where: { id: { in: productIds } },
-        select: { id: true, purchasePrice: true, isGroup: true, name: true },
+        select: {
+          id: true,
+          name: true,
+          purchasePrice: true,
+          isGroup: true,
+          productType: true,
+          bottleSizeMl: true,
+          oilProductId: true,
+          waterProductId: true,
+          bottleProductId: true,
+          oilRatioPercent: true,
+          parentId: true,
+          parent: {
+            select: {
+              id: true,
+              oilProductId: true,
+              waterProductId: true,
+              oilRatioPercent: true,
+              bottleProductId: true,
+            },
+          },
+        },
       });
       const groupHit = prods.find((p) => p.isGroup);
       if (groupHit) {
@@ -79,9 +105,27 @@ router.post('/complete', async (req, res, next) => {
         });
       }
       prods.forEach((p) => {
+        productById[p.id] = p;
         purchaseByProduct[p.id] =
           p.purchasePrice != null && p.purchasePrice >= 0 ? p.purchasePrice : null;
       });
+    }
+
+    // Bottle SKUs by size (Accessories) — for flat sprays without size children
+    const bottleSkus = await prisma.product.findMany({
+      where: {
+        productType: 'FIXED',
+        isActive: true,
+        isGroup: false,
+        bottleSizeMl: { not: null },
+      },
+      select: { id: true, bottleSizeMl: true },
+    });
+    const bottleIdByMl = {};
+    for (const b of bottleSkus) {
+      if (b.bottleSizeMl != null && bottleIdByMl[b.bottleSizeMl] == null) {
+        bottleIdByMl[b.bottleSizeMl] = b.id;
+      }
     }
 
     // Calculate line totals and validate
@@ -90,12 +134,50 @@ router.post('/complete', async (req, res, next) => {
       let lineTotal = Math.round(item.quantity * item.unitPricePaise) - (item.discountPaise || 0);
       if (lineTotal < 0) lineTotal = 0;
 
-      // Spray validation
-      if (item.productType === 'SPRAY') {
-        if (item.sprayBottleMl && item.sprayOilMl) {
-          if (item.sprayOilMl > item.sprayBottleMl) {
+      let sprayBottleMl = item.sprayBottleMl || null;
+      let sprayOilMl = item.sprayOilMl || null;
+      let sprayLiquidMl = null;
+      let recipe = null;
+
+      if (item.productType === 'SPRAY' && item.productId && productById[item.productId]) {
+        const p = productById[item.productId];
+        const parent = p.parent || null;
+        const bottleMl = sprayBottleMl || p.bottleSizeMl || null;
+        // Prefer per-line owner override, else product/parent default
+        const ratioRaw =
+          item.oilRatioPercent != null && item.oilRatioPercent !== undefined
+            ? item.oilRatioPercent
+            : parent?.oilRatioPercent ?? p.oilRatioPercent ?? 50;
+        const ratio = Math.min(100, Math.max(0, Number(ratioRaw)));
+        const oilId = parent?.oilProductId || p.oilProductId || null;
+        const waterId = parent?.waterProductId || p.waterProductId || null;
+        let bottleId = p.bottleProductId || parent?.bottleProductId || null;
+        const includeBottle = item.sprayIncludeBottle !== false; // default true
+
+        if (includeBottle && !bottleId && bottleMl && bottleIdByMl[bottleMl]) {
+          bottleId = bottleIdByMl[bottleMl];
+        }
+
+        if (bottleMl && oilId) {
+          // Per unit recipe; multiplied by line quantity at stock time
+          const oilPer = (bottleMl * ratio) / 100;
+          const waterPer = bottleMl - oilPer;
+          sprayBottleMl = bottleMl;
+          sprayOilMl = Math.round(oilPer * 1000) / 1000;
+          sprayLiquidMl = Math.round(waterPer * 1000) / 1000;
+          recipe = {
+            oilProductId: oilId,
+            waterProductId: waterId,
+            bottleProductId: includeBottle ? bottleId : null,
+            oilMlPerUnit: sprayOilMl,
+            waterMlPerUnit: sprayLiquidMl,
+            bottleUnitsPerUnit: includeBottle ? 1 : 0,
+          };
+        } else if (sprayBottleMl && sprayOilMl) {
+          if (sprayOilMl > sprayBottleMl) {
             throw Object.assign(new Error('Oil quantity cannot exceed bottle size'), { status: 400 });
           }
+          sprayLiquidMl = sprayBottleMl - sprayOilMl;
         }
       }
 
@@ -109,9 +191,10 @@ router.post('/complete', async (req, res, next) => {
         ...item,
         lineTotalPaise: lineTotal,
         purchasePricePaise,
-        sprayLiquidMl: item.sprayBottleMl && item.sprayOilMl
-          ? item.sprayBottleMl - item.sprayOilMl
-          : null,
+        sprayBottleMl,
+        sprayOilMl,
+        sprayLiquidMl,
+        _recipe: recipe,
       };
     });
 
@@ -190,11 +273,62 @@ router.post('/complete', async (req, res, next) => {
         },
       });
 
+      // Stock: composite sprays deduct oil + water + bottle; others deduct the product itself
+      for (const it of processedItems) {
+        if (!(it.quantity > 0)) continue;
+        const recipe = it._recipe;
+        if (recipe && (recipe.oilProductId || recipe.waterProductId || recipe.bottleProductId)) {
+          const q = Number(it.quantity);
+          if (recipe.oilProductId && recipe.oilMlPerUnit > 0) {
+            await tx.product.update({
+              where: { id: recipe.oilProductId },
+              data: { stockQty: { decrement: recipe.oilMlPerUnit * q } },
+            });
+          }
+          if (recipe.waterProductId && recipe.waterMlPerUnit > 0) {
+            await tx.product.update({
+              where: { id: recipe.waterProductId },
+              data: { stockQty: { decrement: recipe.waterMlPerUnit * q } },
+            });
+          }
+          if (recipe.bottleProductId) {
+            await tx.product.update({
+              where: { id: recipe.bottleProductId },
+              data: { stockQty: { decrement: recipe.bottleUnitsPerUnit * q } },
+            });
+          }
+          // Finished spray size is not a warehouse SKU when recipe is configured
+          continue;
+        }
+        if (!it.productId) continue;
+        await tx.product.update({
+          where: { id: it.productId },
+          data: { stockQty: { decrement: it.quantity } },
+        });
+      }
+
       return invoice;
     });
 
     res.status(201).json(result);
   } catch (err) {
+    // Concurrent duplicate with same idempotencyKey → return the winner
+    if (err?.code === 'P2002' && body?.idempotencyKey) {
+      try {
+        const existing = await prisma.invoice.findUnique({
+          where: { idempotencyKey: body.idempotencyKey },
+          include: {
+            items: true,
+            payments: true,
+            customer: true,
+            createdBy: { select: { name: true } },
+          },
+        });
+        if (existing) return res.status(200).json(existing);
+      } catch (_) {
+        /* fall through */
+      }
+    }
     next(err);
   }
 });
