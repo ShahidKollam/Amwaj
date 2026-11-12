@@ -1,9 +1,7 @@
-Amwaj POS v1.6.9 (20261112)
+Amwaj POS v1.7.2 (20261112)
 
-- Flat sprays: no size-child products on Products page
-- Bill: tap spray → size picker (10–100 ml); 2-col grid like attar
-- Price = ₹/ml × size; stock oil+water+bottle by size
-- Seed: flat spray groups; bottles 10–100 ml in Accessories
-- Billing resolves bottle SKU by ml when no bottleProductId
+- Bill items / review: non-spray lines first, spray lines always at the bottom
+- Catalog still: sprays at bottom when picking products
+- No icon/catalog other changes
 
-Full reset recommended after upgrade: npm run db:reset
+No DB migration.

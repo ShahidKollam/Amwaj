@@ -168,14 +168,31 @@ export default function BillPage() {
         // Hide group parents and size-children (legacy); sprays are standalone.
         const standalone = list.filter((p) => !p.isGroup && !p.parentId)
 
+        const rank = (p) => (p.productType === 'SPRAY' ? 1 : 0)
         return standalone
             .filter(matches)
-            .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || (a.name || '').localeCompare(b.name || ''))
+            .sort(
+                (a, b) =>
+                    rank(a) - rank(b) ||
+                    (a.sortOrder || 0) - (b.sortOrder || 0) ||
+                    (a.name || '').localeCompare(b.name || '')
+            )
             .map((p) => ({ type: 'product', product: p }))
     }, [products, activeCategory, search])
 
 
     const filteredProducts = catalogRows // kept name for minimal churn in empty-state checks
+
+    /** Bill items list: non-spray first, sprays at the bottom */
+    const sortedCart = useMemo(() => {
+        const list = Array.isArray(cart) ? [...cart] : []
+        return list.sort((a, b) => {
+            const ra = a.productType === 'SPRAY' ? 1 : 0
+            const rb = b.productType === 'SPRAY' ? 1 : 0
+            return ra - rb
+        })
+    }, [cart])
+
 
     const subtotalPaise = useMemo(
         () => (Array.isArray(cart) ? cart : []).reduce((s, item) => s + (item?.lineTotalPaise || 0), 0),
@@ -261,9 +278,18 @@ export default function BillPage() {
                     isPerMl && bottleMl != null && perMl > 0
                         ? Math.round(bottleMl * perMl)
                         : Number(product.unitPrice) || 0
-                const bottlePricePaise = product.bottleProduct?.unitPrice
+                let bottlePricePaise = product.bottleProduct?.unitPrice
                     ? Number(product.bottleProduct.unitPrice)
                     : 0
+                if (!bottlePricePaise && bottleMl && Array.isArray(products)) {
+                    const bottleSku = products.find(
+                        (x) =>
+                            x.productType === 'FIXED' &&
+                            !x.isGroup &&
+                            Number(x.bottleSizeMl) === Number(bottleMl)
+                    )
+                    if (bottleSku?.unitPrice) bottlePricePaise = Number(bottleSku.unitPrice)
+                }
                 const displayName =
                     bottleMl != null ? `${product.name} · ${bottleMl} ml` : product.name
                 return [
@@ -361,7 +387,7 @@ export default function BillPage() {
         setCart((prev) => prev.filter((i) => i.key !== key))
     }
 
-    /** Owner-only: adjust spray oil ratio / include bottle; recalc line price & oil ml */
+    /** Owner: oil % + bottle ON/OFF recalculate line total immediately */
     const updateSprayItem = (key, patch) => {
         setCart((prev) =>
             prev.map((item) => {
@@ -374,11 +400,19 @@ export default function BillPage() {
                     bottleMl > 0 ? Math.round(((bottleMl * ratio) / 100) * 1000) / 1000 : null
                 const include = next.sprayIncludeBottle !== false
                 next.sprayIncludeBottle = include
-                const full = next.fullUnitPricePaise != null ? next.fullUnitPricePaise : next.unitPricePaise
-                const bottleP = next.bottlePricePaise || 0
-                const unit = include ? full : Math.max(0, full - bottleP)
+
+                // fullUnitPricePaise = price at 50% oil WITH bottle (as added from catalog)
+                const fullWithBottle =
+                    next.fullUnitPricePaise != null ? next.fullUnitPricePaise : next.unitPricePaise
+                const bottleP = Math.max(0, Number(next.bottlePricePaise) || 0)
+                const liquidAt50 = Math.max(0, fullWithBottle - bottleP)
+                // Scale liquid portion by oil ratio vs default 50% (more oil → higher bill)
+                const defaultRatio = 50
+                const liquidNow = Math.round(liquidAt50 * (ratio / defaultRatio))
+                const unit = Math.max(0, liquidNow + (include ? bottleP : 0))
                 next.unitPricePaise = unit
-                const qty = typeof next.quantity === 'number' ? next.quantity : parseFloat(next.quantity) || 0
+                const qty =
+                    typeof next.quantity === 'number' ? next.quantity : parseFloat(next.quantity) || 0
                 next.lineTotalPaise = Math.max(0, Math.round(qty * unit) - (next.discountPaise || 0))
                 return next
             })
@@ -604,7 +638,7 @@ export default function BillPage() {
 
                     {/* Items — same one-line qty controls as cart sheet / desktop */}
                     <div className="card divide-y divide-border px-2">
-                        {cart.map((item) => (
+                        {sortedCart.map((item) => (
                             <CartLine
                                 key={item.key}
                                 item={item}
@@ -933,7 +967,7 @@ export default function BillPage() {
                     {cart.length === 0 ? (
                         <p className="text-center text-muted text-sm py-8">Add products to start a bill</p>
                     ) : (
-                        cart.map((item) => (
+                        sortedCart.map((item) => (
                             <CartLine
                                 key={item.key}
                                 item={item}
@@ -997,7 +1031,7 @@ export default function BillPage() {
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto px-4 space-y-1 min-h-0 max-h-[45vh]">
-                            {cart.map((item) => (
+                            {sortedCart.map((item) => (
                                 <CartLine
                                     key={item.key}
                                     item={item}
@@ -1082,12 +1116,14 @@ function CartLine({ item, updateQty, setItemQty, removeItem, updateSprayItem, is
         item.sprayBottleMl != null && oilMl != null
             ? Math.round((item.sprayBottleMl - oilMl) * 1000) / 1000
             : null
+    const bottleOn = item.sprayIncludeBottle !== false
+    const bottleP = item.bottlePricePaise || 0
 
     const unitLabel =
         item.productType === 'PER_ML'
             ? `${formatINR(item.unitPricePaise)}/ml`
             : isSpray && item.sprayBottleMl
-              ? `${item.sprayBottleMl} ml${item.sprayIncludeBottle === false ? ' · no bottle' : ''}`
+              ? `${item.sprayBottleMl} ml${bottleOn ? '' : ' · no bottle'}`
               : formatINR(item.unitPricePaise)
 
     const qtyDisplay = item.quantity === '' || item.quantity == null ? '' : item.quantity
@@ -1099,6 +1135,12 @@ function CartLine({ item, updateQty, setItemQty, removeItem, updateSprayItem, is
         }
         const num = parseFloat(qtyDisplay)
         if (isNaN(num) || num <= 0) removeItem(item.key)
+    }
+
+    const setRatio = (n) => {
+        const v = Math.min(100, Math.max(0, Math.round(Number(n))))
+        if (!Number.isFinite(v)) return
+        updateSprayItem(item.key, { oilRatioPercent: v })
     }
 
     return (
@@ -1149,72 +1191,91 @@ function CartLine({ item, updateQty, setItemQty, removeItem, updateSprayItem, is
                 </button>
             </div>
 
-            {/* Owner-only spray controls — not shown on customer invoice */}
+            {/* Owner spray tune — oil/water + bottle; price updates when bottle off */}
             {isSpray && isOwner && updateSprayItem && item.sprayBottleMl && (
-                <div className="mt-1.5 ml-0 rounded-xl bg-ivory/80 border border-border/80 px-2.5 py-2 space-y-1.5">
-                    <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted shrink-0">
-                            Oil %
+                <div className="mt-2 rounded-2xl border border-border/80 bg-gradient-to-b from-white to-ivory/60 p-3 space-y-3 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                            Mix
                         </span>
-                        <input
-                            type="number"
-                            inputMode="numeric"
-                            min={0}
-                            max={100}
-                            step={1}
-                            value={ratio}
-                            onChange={(e) => {
-                                const v = e.target.value
-                                if (v === '') {
-                                    updateSprayItem(item.key, { oilRatioPercent: 0 })
-                                    return
-                                }
-                                const n = Math.min(100, Math.max(0, Number(v)))
-                                if (!Number.isFinite(n)) return
-                                updateSprayItem(item.key, { oilRatioPercent: n })
-                            }}
-                            className="w-14 text-center text-sm font-semibold border border-border rounded-lg py-1 bg-white"
-                        />
-                        <span className="text-[11px] text-muted tabular-nums">
-                            oil {ratio}% · water {waterPct}%
-                            {oilMl != null ? ` · ${oilMl}/${waterMl} ml` : ''}
+                        <span className="text-[11px] tabular-nums text-charcoal font-medium">
+                            {oilMl != null ? (
+                                <>
+                                    <span className="text-emerald">{oilMl} ml oil</span>
+                                    <span className="text-muted"> · </span>
+                                    <span>{waterMl} ml water</span>
+                                </>
+                            ) : (
+                                `${ratio}% oil`
+                            )}
                         </span>
                     </div>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setRatio(ratio - 5)}
+                            className="w-9 h-9 rounded-xl border border-border bg-white flex items-center justify-center text-muted active:bg-ivory"
+                            aria-label="Less oil"
+                        >
+                            <Minus size={14} />
+                        </button>
+                        <div className="flex-1">
+                            <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                step={5}
+                                value={ratio}
+                                onChange={(e) => setRatio(e.target.value)}
+                                className="w-full accent-emerald h-2 cursor-pointer"
+                            />
+                            <div className="flex justify-between text-[10px] text-muted mt-1 px-0.5">
+                                <span>Oil {ratio}%</span>
+                                <span>Water {waterPct}%</span>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setRatio(ratio + 5)}
+                            className="w-9 h-9 rounded-xl border border-border bg-white flex items-center justify-center text-muted active:bg-ivory"
+                            aria-label="More oil"
+                        >
+                            <Plus size={14} />
+                        </button>
+                    </div>
+
                     <button
                         type="button"
                         onClick={() =>
-                            updateSprayItem(item.key, {
-                                sprayIncludeBottle: item.sprayIncludeBottle === false,
-                            })
+                            updateSprayItem(item.key, { sprayIncludeBottle: !bottleOn })
                         }
-                        className={`w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[11px] font-medium transition-colors ${
-                            item.sprayIncludeBottle === false
-                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                                : 'bg-white text-charcoal border border-border'
+                        className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-semibold transition-colors ${
+                            bottleOn
+                                ? 'bg-emerald/10 text-emerald border border-emerald/25'
+                                : 'bg-amber-50 text-amber-900 border border-amber-200'
                         }`}
                     >
                         <span>
-                            {item.sprayIncludeBottle === false
-                                ? 'Bottle removed from this sale'
-                                : item.sprayBottleMl
-                                  ? `Include ${item.sprayBottleMl} ml bottle`
-                                  : 'Include bottle'}
+                            {bottleOn
+                                ? `${item.sprayBottleMl} ml bottle included`
+                                : 'Bottle not included'}
                         </span>
-                        <span
-                            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
-                                item.sprayIncludeBottle === false
-                                    ? 'bg-amber-100 text-amber-800'
-                                    : 'bg-emerald/10 text-emerald'
-                            }`}
-                        >
-                            {item.sprayIncludeBottle === false ? 'OFF' : 'ON'}
+                        <span className="text-[10px] font-bold tracking-wide opacity-90">
+                            {bottleOn ? 'ON' : bottleP ? `−${formatINR(bottleP)}` : 'OFF'}
                         </span>
                     </button>
+                    {!bottleOn && bottleP > 0 && (
+                        <p className="text-[10px] text-muted text-center -mt-1">
+                            Line price reduced by bottle cost · bottle stock not deducted
+                        </p>
+                    )}
                 </div>
             )}
         </div>
     )
 }
+
 
 /* ── Desktop payment footer ─────────────────────────────── */
 function DesktopPayFooter({

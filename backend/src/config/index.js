@@ -17,7 +17,6 @@ if (nodeEnv === 'production') {
 export const config = {
   port: Number(process.env.PORT) || 4000,
   jwtSecret: jwtSecret || 'dev-secret-change-me',
-  frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:5174' || 'http://localhost:5173',
+  frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
   nodeEnv,
 };
- 

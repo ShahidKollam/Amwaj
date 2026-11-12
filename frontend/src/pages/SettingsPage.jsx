@@ -4,7 +4,7 @@ import { api, formatINR } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
   LogOut, BarChart3, Store, ChevronRight, ChevronLeft,
-  User, Users, KeyRound, Calendar, Download, FileSpreadsheet, FileText, ChevronDown,
+  User, Users, KeyRound, Calendar, FileSpreadsheet, FileText, ChevronDown,
 } from 'lucide-react';
 
 function todayISO() {
@@ -31,7 +31,6 @@ export default function SettingsPage() {
   const location = useLocation();
   const isOwner = user?.role === 'OWNER';
 
-  /** Escape text for safe insertion into print HTML */
   const escapeHtml = (value) => {
     if (value == null) return '';
     return String(value)
@@ -54,7 +53,7 @@ export default function SettingsPage() {
   const [toast, setToast] = useState('');
   const [staffList, setStaffList] = useState([]);
   const [staffForm, setStaffForm] = useState({ name: '', username: '', password: '' });
-  const [editStaff, setEditStaff] = useState(null); // { id, name, password, isActive }
+  const [editStaff, setEditStaff] = useState(null);
   const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [busy, setBusy] = useState(false);
 
@@ -78,7 +77,6 @@ export default function SettingsPage() {
     api.getSettings().then(setSettings).catch(console.error);
   }, []);
 
-  // Bottom/side Settings tab while already in a sub-section → back to menu
   useEffect(() => {
     if (location.state?.settingsHome) {
       setSection(null);
@@ -187,10 +185,8 @@ export default function SettingsPage() {
     }
   };
 
-
   const paiseToNum = (p) => (Number(p) || 0) / 100;
 
-  /** Excel-friendly CSV (opens cleanly in Excel / Sheets) */
   const downloadReportExcel = () => {
     if (!report) return;
     const rows = [];
@@ -245,7 +241,6 @@ export default function SettingsPage() {
     URL.revokeObjectURL(url);
   };
 
-  /** Printable PDF via browser print dialog */
   const downloadReportPdf = () => {
     if (!report) return;
     const shop = settings?.shopName || 'Amwaj';
@@ -254,9 +249,9 @@ export default function SettingsPage() {
         (it) =>
           `<tr><td>${escapeHtml(it.productName || it.name || '—')}</td><td style="text-align:right">${
             Number(it.quantity) || it.qty || 0
-          }</td><td style="text-align:right">${escapeHtml(formatINR(
-            it.salesPaise ?? it.lineTotalPaise ?? it.totalPaise ?? it.revenue
-          ))}</td></tr>`
+          }</td><td style="text-align:right">${escapeHtml(
+            formatINR(it.salesPaise ?? it.lineTotalPaise ?? it.totalPaise ?? it.revenue)
+          )}</td></tr>`
       )
       .join('');
     const topCust = (report.topCustomers || [])
@@ -264,9 +259,9 @@ export default function SettingsPage() {
         (c) =>
           `<tr><td>${escapeHtml(c.name || 'Walk-in')}${
             c.mobile ? ` <span style="color:#888;font-size:11px">${escapeHtml(c.mobile)}</span>` : ''
-          }</td><td style="text-align:right">${c.billCount ?? 0}</td><td style="text-align:right">${escapeHtml(formatINR(
-            c.revenue
-          ))}</td></tr>`
+          }</td><td style="text-align:right">${c.billCount ?? 0}</td><td style="text-align:right">${escapeHtml(
+            formatINR(c.revenue)
+          )}</td></tr>`
       )
       .join('');
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Sales Report</title>
@@ -316,7 +311,7 @@ export default function SettingsPage() {
     w.document.close();
   };
 
-    const setPreset = (preset) => {
+  const setPreset = (preset) => {
     const today = todayISO();
     if (preset === 'today') {
       setFromDate(today);
@@ -334,7 +329,6 @@ export default function SettingsPage() {
     }
   };
 
-  // ── Menu ───────────────────────────────────────────────
   if (!section) {
     return (
       <div className="p-4 max-w-lg mx-auto pb-6">
@@ -359,14 +353,11 @@ export default function SettingsPage() {
             </button>
           ))}
         </div>
-        {toast && (
-          <p className="mt-4 text-center text-sm text-emerald font-medium">{toast}</p>
-        )}
+        {toast && <p className="mt-4 text-center text-sm text-emerald font-medium">{toast}</p>}
       </div>
     );
   }
 
-  // ── Shop ───────────────────────────────────────────────
   if (section === 'shop') {
     return (
       <div className="p-4 max-w-lg mx-auto pb-6">
@@ -417,7 +408,6 @@ export default function SettingsPage() {
     );
   }
 
-  // ── Reports (owner only) ───────────────────────────────
   if (section === 'reports') {
     if (!isOwner) {
       return (
@@ -430,8 +420,6 @@ export default function SettingsPage() {
     return (
       <div className="p-4 max-w-lg mx-auto pb-6">
         <BackHeader title="Reports" onBack={() => setSection(null)} />
-
-        {/* Date range */}
         <div className="card p-3 mb-3 space-y-3">
           <div className="flex gap-2">
             {['today', 'week', 'month'].map((p) => (
@@ -502,9 +490,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-2 gap-2">
               <div className="card p-3 text-center">
                 <p className="text-[10px] uppercase text-muted font-semibold">Total sales</p>
-                <p className="text-xl font-bold text-emerald mt-1">
-                  {formatINR(report.totalSalesPaise)}
-                </p>
+                <p className="text-xl font-bold text-emerald mt-1">{formatINR(report.totalSalesPaise)}</p>
               </div>
               <div className="card p-3 text-center">
                 <p className="text-[10px] uppercase text-muted font-semibold">Bills</p>
@@ -512,9 +498,7 @@ export default function SettingsPage() {
               </div>
               <div className="card p-3 text-center">
                 <p className="text-[10px] uppercase text-muted font-semibold">Avg bill</p>
-                <p className="text-lg font-bold text-charcoal mt-1">
-                  {formatINR(report.averageBillPaise)}
-                </p>
+                <p className="text-lg font-bold text-charcoal mt-1">{formatINR(report.averageBillPaise)}</p>
               </div>
               <div className="card p-3 text-center">
                 <p className="text-[10px] uppercase text-muted font-semibold">Cash / UPI</p>
@@ -526,15 +510,12 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* P&L — owner only; based on purchase rate snapped at sale */}
             {(report.costKnown || report.totalProfitPaise != null) && (
               <div className="grid grid-cols-2 gap-2">
                 <div className="card p-3 text-center">
                   <p className="text-[10px] uppercase text-muted font-semibold">Est. cost</p>
                   <p className="text-lg font-bold text-charcoal mt-1">
-                    {report.totalCostPaise != null
-                      ? formatINR(report.totalCostPaise)
-                      : '—'}
+                    {report.totalCostPaise != null ? formatINR(report.totalCostPaise) : '—'}
                   </p>
                 </div>
                 <div className="card p-3 text-center">
@@ -544,9 +525,7 @@ export default function SettingsPage() {
                       (report.totalProfitPaise || 0) >= 0 ? 'text-emerald' : 'text-red-600'
                     }`}
                   >
-                    {report.totalProfitPaise != null
-                      ? formatINR(report.totalProfitPaise)
-                      : '—'}
+                    {report.totalProfitPaise != null ? formatINR(report.totalProfitPaise) : '—'}
                   </p>
                 </div>
               </div>
@@ -571,9 +550,7 @@ export default function SettingsPage() {
                           </span>
                         )}
                       </span>
-                      <span className="shrink-0 font-semibold text-emerald">
-                        {formatINR(it.revenue)}
-                      </span>
+                      <span className="shrink-0 font-semibold text-emerald">{formatINR(it.revenue)}</span>
                     </div>
                   ))}
                 </div>
@@ -585,10 +562,7 @@ export default function SettingsPage() {
                 <p className="text-[10px] uppercase text-muted font-semibold mb-2">Top customers</p>
                 <div className="space-y-2">
                   {report.topCustomers.slice(0, 8).map((c) => (
-                    <div
-                      key={c.customerId || c.name}
-                      className="flex justify-between gap-2 text-sm"
-                    >
+                    <div key={c.customerId || c.name} className="flex justify-between gap-2 text-sm">
                       <span className="truncate text-charcoal min-w-0">
                         {c.name}
                         <span className="block text-[10px] text-muted font-normal">
@@ -596,9 +570,7 @@ export default function SettingsPage() {
                           {c.billCount} bill{c.billCount === 1 ? '' : 's'}
                         </span>
                       </span>
-                      <span className="shrink-0 font-semibold text-emerald">
-                        {formatINR(c.revenue)}
-                      </span>
+                      <span className="shrink-0 font-semibold text-emerald">{formatINR(c.revenue)}</span>
                     </div>
                   ))}
                 </div>
@@ -613,7 +585,6 @@ export default function SettingsPage() {
     );
   }
 
-  // ── Staff (owner only) ─────────────────────────────────
   if (section === 'staff') {
     if (!isOwner) {
       return (
@@ -626,7 +597,6 @@ export default function SettingsPage() {
     return (
       <div className="p-4 max-w-lg mx-auto pb-6">
         <BackHeader title="Staff accounts" onBack={() => setSection(null)} />
-
         <form onSubmit={createStaff} className="card p-4 space-y-3 mb-4">
           <p className="text-sm font-semibold text-charcoal">Create staff</p>
           <input
@@ -677,13 +647,13 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setStaffPwdOpen(false)
+                      setStaffPwdOpen(false);
                       setEditStaff({
                         id: u.id,
                         name: u.name || '',
                         password: '',
                         isActive: u.isActive !== false,
-                      })
+                      });
                     }}
                     className="text-xs font-medium text-emerald px-2 py-1 rounded-lg border border-emerald/30"
                   >
@@ -705,8 +675,6 @@ export default function SettingsPage() {
                       required
                     />
                   </div>
-
-                  {/* Same open/close pattern as Account → Change password */}
                   <div className="rounded-xl border border-border overflow-hidden bg-ivory/40">
                     <button
                       type="button"
@@ -744,7 +712,6 @@ export default function SettingsPage() {
                       </div>
                     )}
                   </div>
-
                   <label className="flex items-center gap-2 text-sm text-charcoal">
                     <input
                       type="checkbox"
@@ -760,8 +727,8 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        setEditStaff(null)
-                        setStaffPwdOpen(false)
+                        setEditStaff(null);
+                        setStaffPwdOpen(false);
                       }}
                       className="flex-1 py-2 text-sm rounded-xl border border-border"
                     >
@@ -781,12 +748,10 @@ export default function SettingsPage() {
     );
   }
 
-  // ── Account ────────────────────────────────────────────
   if (section === 'account') {
     return (
       <div className="p-4 max-w-lg mx-auto pb-6">
         <BackHeader title="Account" onBack={() => setSection(null)} />
-
         <div className="card p-4 mb-3 flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-emerald/10 flex items-center justify-center text-emerald font-bold text-lg">
             {(user?.name || 'A')[0].toUpperCase()}
@@ -820,10 +785,7 @@ export default function SettingsPage() {
             />
           </button>
           {pwdOpen && (
-            <form
-              onSubmit={changePassword}
-              className="px-4 pb-4 space-y-3 border-t border-border pt-3"
-            >
+            <form onSubmit={changePassword} className="px-4 pb-4 space-y-3 border-t border-border pt-3">
               <div>
                 <label className="text-[10px] uppercase tracking-wide text-muted font-semibold mb-1 block">
                   Current password

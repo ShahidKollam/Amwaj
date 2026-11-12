@@ -543,8 +543,8 @@ export default function ProductsPage() {
                                     })
                                 }
                             >
-                                <option value="PER_ML">Per ml (Attar/Oud)</option>
-                                <option value="SPRAY">Spray</option>
+                                <option value="PER_ML">Per ml (Attar/Oud/Spray)</option>
+                                <option value="SPRAY">Spray (composite)</option>
                                 <option value="FIXED">Fixed price</option>
                             </select>
                         </div>
