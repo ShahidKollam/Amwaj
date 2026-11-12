@@ -72,6 +72,8 @@ model Product {
   bottleSizeMl Int?       // e.g. 10, 20, 30, 40, 50, 100 for spray size variants
   // On-hand stock: ml for PER_ML / spray-water, pieces for bottles & fixed. Groups use 0.
   stockQty    Decimal     @default(0) @db.Decimal(14, 3)
+  // Shared stock across Attar/Oud/Spray mirrors of the same oil (same group = one physical qty)
+  stockGroupId String?
 
   // --- Composite spray recipe (usually on parent group; children inherit) ---
   // Oil source (typically PER_ML attar/oud). Oil ml = bottleSizeMl * oilRatioPercent / 100
@@ -100,6 +102,7 @@ model Product {
   @@index([oilProductId])
   @@index([waterProductId])
   @@index([bottleProductId])
+  @@index([stockGroupId])
 }
 
 model Customer {

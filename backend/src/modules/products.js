@@ -97,6 +97,7 @@ const productSchema = z.object({
   waterProductId: z.string().nullable().optional(),
   bottleProductId: z.string().nullable().optional(),
   oilRatioPercent: z.number().min(0).max(100).optional(),
+  stockGroupId: z.string().nullable().optional(),
   sortOrder: z.number().int().optional(),
 });
 
@@ -185,6 +186,10 @@ router.put('/:id', async (req, res, next) => {
       }
       data.isGroup = false;
     }
+    const existing = await prisma.product.findUnique({
+      where: { id: req.params.id },
+      select: { stockGroupId: true, stockQty: true },
+    });
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data,
@@ -205,6 +210,18 @@ router.put('/:id', async (req, res, next) => {
         bottleProduct: { select: { id: true, name: true, unitPrice: true, unit: true, stockQty: true, bottleSizeMl: true } },
       },
     });
+    // Shared stock: editing qty on one mirror updates Attar + Oud + Spray together
+    const groupId = data.stockGroupId !== undefined ? data.stockGroupId : existing?.stockGroupId;
+    if (
+      groupId &&
+      data.stockQty != null &&
+      Number(data.stockQty) !== Number(existing?.stockQty)
+    ) {
+      await prisma.product.updateMany({
+        where: { stockGroupId: groupId },
+        data: { stockQty: data.stockQty },
+      });
+    }
     res.json(sanitizeProduct(product, req.user?.role === 'OWNER'));
   } catch (err) {
     next(err);

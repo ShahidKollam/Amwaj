@@ -267,7 +267,7 @@ export default function BillPage() {
             }
             if (product.productType === 'SPRAY') {
                 const bottleMl = product.bottleSizeMl || null
-                const ratio = Number(product.oilRatioPercent ?? product.parent?.oilRatioPercent ?? 50)
+                const ratio = 50 // default mix; editable on bill line
                 const oilMl =
                     bottleMl != null ? Math.round(((bottleMl * ratio) / 100) * 1000) / 1000 : null
                 // Flat composite spray: unitPrice is per ml (unit === 'ml')
@@ -1108,6 +1108,7 @@ export default function BillPage() {
 
 /* ── Shared cart line (single-row: name + qty + price) ─── */
 function CartLine({ item, updateQty, setItemQty, removeItem, updateSprayItem, isOwner, compact }) {
+    const [mixOpen, setMixOpen] = useState(false)
     const isSpray = item.productType === 'SPRAY'
     const ratio = Number(item.oilRatioPercent ?? 50)
     const waterPct = Math.round((100 - ratio) * 10) / 10
@@ -1118,6 +1119,7 @@ function CartLine({ item, updateQty, setItemQty, removeItem, updateSprayItem, is
             : null
     const bottleOn = item.sprayIncludeBottle !== false
     const bottleP = item.bottlePricePaise || 0
+    const canTune = isSpray && updateSprayItem && item.sprayBottleMl
 
     const unitLabel =
         item.productType === 'PER_ML'
@@ -1150,6 +1152,25 @@ function CartLine({ item, updateQty, setItemQty, removeItem, updateSprayItem, is
                     <div className="font-medium text-sm truncate leading-tight">{item.productName}</div>
                     <div className="text-[11px] text-muted truncate">{unitLabel}</div>
                 </div>
+
+                {canTune && (
+                    <button
+                        type="button"
+                        onClick={() => setMixOpen((o) => !o)}
+                        className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 transition-colors ${
+                            mixOpen
+                                ? 'border-emerald bg-emerald/10 text-emerald'
+                                : 'border-border text-muted'
+                        }`}
+                        aria-label={mixOpen ? 'Hide mix' : 'Adjust mix'}
+                        title="Oil mix & bottle"
+                    >
+                        <ChevronDown
+                            size={14}
+                            className={`transition-transform ${mixOpen ? 'rotate-180' : ''}`}
+                        />
+                    </button>
+                )}
 
                 <div className="flex items-center gap-1 shrink-0">
                     <button
@@ -1191,12 +1212,11 @@ function CartLine({ item, updateQty, setItemQty, removeItem, updateSprayItem, is
                 </button>
             </div>
 
-            {/* Owner spray tune — oil/water + bottle; price updates when bottle off */}
-            {isSpray && isOwner && updateSprayItem && item.sprayBottleMl && (
-                <div className="mt-2 rounded-2xl border border-border/80 bg-gradient-to-b from-white to-ivory/60 p-3 space-y-3 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+            {canTune && mixOpen && (
+                <div className="mt-2 rounded-2xl border border-border/80 bg-ivory/50 p-3 space-y-3">
                     <div className="flex items-center justify-between gap-2">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-muted">
-                            Mix
+                            Oil / water
                         </span>
                         <span className="text-[11px] tabular-nums text-charcoal font-medium">
                             {oilMl != null ? (
@@ -1245,37 +1265,33 @@ function CartLine({ item, updateQty, setItemQty, removeItem, updateSprayItem, is
                         </button>
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={() =>
-                            updateSprayItem(item.key, { sprayIncludeBottle: !bottleOn })
-                        }
-                        className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-semibold transition-colors ${
-                            bottleOn
-                                ? 'bg-emerald/10 text-emerald border border-emerald/25'
-                                : 'bg-amber-50 text-amber-900 border border-amber-200'
-                        }`}
-                    >
-                        <span>
-                            {bottleOn
-                                ? `${item.sprayBottleMl} ml bottle included`
-                                : 'Bottle not included'}
+                    <label className="flex items-center justify-between gap-3 rounded-xl bg-white border border-border px-3 py-2.5 cursor-pointer">
+                        <span className="text-xs font-medium text-charcoal min-w-0">
+                            {item.sprayBottleMl} ml bottle
+                            {!bottleOn && bottleP > 0 ? (
+                                <span className="block text-[10px] text-muted font-normal">
+                                    Not charged · −{formatINR(bottleP)}
+                                </span>
+                            ) : (
+                                <span className="block text-[10px] text-muted font-normal">
+                                    Include in price & stock
+                                </span>
+                            )}
                         </span>
-                        <span className="text-[10px] font-bold tracking-wide opacity-90">
-                            {bottleOn ? 'ON' : bottleP ? `−${formatINR(bottleP)}` : 'OFF'}
-                        </span>
-                    </button>
-                    {!bottleOn && bottleP > 0 && (
-                        <p className="text-[10px] text-muted text-center -mt-1">
-                            Line price reduced by bottle cost · bottle stock not deducted
-                        </p>
-                    )}
+                        <input
+                            type="checkbox"
+                            className="w-5 h-5 rounded border-border text-emerald accent-emerald shrink-0"
+                            checked={bottleOn}
+                            onChange={() =>
+                                updateSprayItem(item.key, { sprayIncludeBottle: !bottleOn })
+                            }
+                        />
+                    </label>
                 </div>
             )}
         </div>
     )
 }
-
 
 /* ── Desktop payment footer ─────────────────────────────── */
 function DesktopPayFooter({

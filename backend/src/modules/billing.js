@@ -7,6 +7,28 @@ import { requireAuth } from '../middlewares/auth.js';
 const router = Router();
 router.use(requireAuth);
 
+/** Decrement stock; if product is in a stock group, apply same delta to every member */
+async function decrementStock(tx, productId, amount) {
+  if (!productId || !(amount > 0)) return;
+  const p = await tx.product.findUnique({
+    where: { id: productId },
+    select: { id: true, stockGroupId: true },
+  });
+  if (!p) return;
+  if (p.stockGroupId) {
+    await tx.product.updateMany({
+      where: { stockGroupId: p.stockGroupId },
+      data: { stockQty: { decrement: amount } },
+    });
+  } else {
+    await tx.product.update({
+      where: { id: productId },
+      data: { stockQty: { decrement: amount } },
+    });
+  }
+}
+
+
 // Helper: money in paise
 function toPaise(rupees) {
   return Math.round(Number(rupees) * 100);
@@ -273,38 +295,26 @@ router.post('/complete', async (req, res, next) => {
         },
       });
 
-      // Stock: composite sprays deduct oil + water + bottle; others deduct the product itself
+      // Stock: composite sprays deduct oil + water + bottle; others deduct the product itself.
+      // stockGroupId → same physical oil: Attar/Oud/Spray mirrors all move together.
       for (const it of processedItems) {
         if (!(it.quantity > 0)) continue;
         const recipe = it._recipe;
         if (recipe && (recipe.oilProductId || recipe.waterProductId || recipe.bottleProductId)) {
           const q = Number(it.quantity);
           if (recipe.oilProductId && recipe.oilMlPerUnit > 0) {
-            await tx.product.update({
-              where: { id: recipe.oilProductId },
-              data: { stockQty: { decrement: recipe.oilMlPerUnit * q } },
-            });
+            await decrementStock(tx, recipe.oilProductId, recipe.oilMlPerUnit * q);
           }
           if (recipe.waterProductId && recipe.waterMlPerUnit > 0) {
-            await tx.product.update({
-              where: { id: recipe.waterProductId },
-              data: { stockQty: { decrement: recipe.waterMlPerUnit * q } },
-            });
+            await decrementStock(tx, recipe.waterProductId, recipe.waterMlPerUnit * q);
           }
-          if (recipe.bottleProductId) {
-            await tx.product.update({
-              where: { id: recipe.bottleProductId },
-              data: { stockQty: { decrement: recipe.bottleUnitsPerUnit * q } },
-            });
+          if (recipe.bottleProductId && recipe.bottleUnitsPerUnit > 0) {
+            await decrementStock(tx, recipe.bottleProductId, recipe.bottleUnitsPerUnit * q);
           }
-          // Finished spray size is not a warehouse SKU when recipe is configured
           continue;
         }
         if (!it.productId) continue;
-        await tx.product.update({
-          where: { id: it.productId },
-          data: { stockQty: { decrement: it.quantity } },
-        });
+        await decrementStock(tx, it.productId, Number(it.quantity));
       }
 
       return invoice;

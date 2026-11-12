@@ -1,7 +1,9 @@
-Amwaj POS v1.7.2 (20261112)
+Amwaj POS v1.7.6 (20261112)
 
-- Bill items / review: non-spray lines first, spray lines always at the bottom
-- Catalog still: sprays at bottom when picking products
-- No icon/catalog other changes
+- Shared stock for mirrored Attar / Oud / Spray (stockGroupId)
+- Bill complete: deducting one mirror updates qty on all in the group
+- Edit stock on one product syncs the group
+- Mirror checkbox creates one stockGroupId + links Spray oil → Attar product
 
-No DB migration.
+Migration required:
+  cd backend && npx prisma migrate deploy && npx prisma generate

@@ -45,6 +45,7 @@ const emptyForm = {
     bottleProductId: '',
     oilRatioPercent: '50',
     sortOrder: '0',
+    mirrorFragrance: false, // Attar + Oud + Spray in one go
 }
 
 function formatStock(p) {
@@ -271,6 +272,7 @@ export default function ProductsPage() {
                     ? String(Number(p.oilRatioPercent))
                     : '50',
             sortOrder: String(p.sortOrder ?? 0),
+            mirrorFragrance: false,
         })
         setShowForm(true)
     }
@@ -280,12 +282,12 @@ export default function ProductsPage() {
         setBusy(true)
         setError('')
         const isGroup = form.productType === 'SPRAY' ? false : Boolean(form.isGroup)
-        const payload = {
+        const basePayload = {
             name: form.name.trim(),
             categoryId: form.categoryId,
             productType: form.productType,
             unitPrice: isGroup ? 0 : Math.round(Number(form.unitPrice) * 100),
-            unit: form.unit || (form.productType === 'PER_ML' ? 'ml' : 'piece'),
+            unit: form.unit || (form.productType === 'PER_ML' || form.productType === 'SPRAY' ? 'ml' : 'piece'),
             isGroup,
             parentId: isGroup ? null : form.parentId || null,
             bottleSizeMl:
@@ -297,42 +299,135 @@ export default function ProductsPage() {
             waterProductId: form.waterProductId || null,
             bottleProductId: isGroup ? null : form.bottleProductId || null,
             oilRatioPercent: Math.min(100, Math.max(0, Number(form.oilRatioPercent) || 50)),
-            sortOrder: Number(form.sortOrder) || 0,
+            sortOrder: Math.round(Number(form.sortOrder) || 0),
         }
-        if (!isGroup && (!Number.isFinite(payload.unitPrice) || payload.unitPrice <= 0)) {
+
+        if (!isGroup && (!Number.isFinite(basePayload.unitPrice) || basePayload.unitPrice <= 0)) {
             setError('Selling price is required for sellable products')
             setBusy(false)
             return
         }
-        // Purchase / wholesale rate — owner only; optional; not for groups
-        if (isOwner && !isGroup) {
-            const raw = String(form.purchasePrice ?? '').trim()
-            if (raw === '') {
-                payload.purchasePrice = null
-            } else {
-                const n = Number(raw)
+
+        if (isOwner) {
+            const pr = form.purchasePrice
+            if (pr !== '' && pr != null) {
+                const n = Math.round(Number(pr) * 100)
                 if (!Number.isFinite(n) || n < 0) {
                     setError('Purchase rate must be a valid amount (₹)')
                     setBusy(false)
                     return
                 }
-                payload.purchasePrice = Math.round(n * 100)
+                basePayload.purchasePrice = n
+            } else {
+                basePayload.purchasePrice = null
             }
         }
-        try {
-            if (editing) {
-                const updated = await api.updateProduct(editing.id, payload)
-                const next = products.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
-                setProducts(next)
-                await syncCache(next)
-            } else {
-                const created = await api.createProduct(payload)
-                const next = [...products, created]
-                setProducts(next)
-                await syncCache(next)
+
+        /** Resolve Attar / Oud / Spray category ids by name */
+        const fragranceCats = () => {
+            const want = ['attar', 'oud', 'spray']
+            const out = []
+            for (const w of want) {
+                const c = (categories || []).find((x) => (x.name || '').toLowerCase() === w)
+                if (c) out.push(c)
             }
+            return out
+        }
+
+        const payloadForCategory = (cat) => {
+            const name = (cat.name || '').toLowerCase()
+            const isSprayCat = name === 'spray'
+            return {
+                ...basePayload,
+                categoryId: cat.id,
+                // Spray section uses SPRAY type (size picker on bill); Attar/Oud stay PER_ML
+                productType: isSprayCat ? 'SPRAY' : 'PER_ML',
+                unit: 'ml',
+                isGroup: false,
+                parentId: null,
+                bottleSizeMl: null,
+            }
+        }
+
+        try {
+            if (form.mirrorFragrance) {
+                const cats = fragranceCats()
+                if (cats.length < 3) {
+                    setError('Need Attar, Oud and Spray categories to mirror. Create them first.')
+                    setBusy(false)
+                    return
+                }
+                const list = asArray(products)
+                // One physical stock shared by Attar + Oud + Spray
+                let stockGroupId =
+                    list.find(
+                        (p) =>
+                            (p.name || '').toLowerCase() === basePayload.name.toLowerCase() &&
+                            p.stockGroupId
+                    )?.stockGroupId || null
+                if (!stockGroupId && typeof crypto !== 'undefined' && crypto.randomUUID) {
+                    stockGroupId = crypto.randomUUID()
+                } else if (!stockGroupId) {
+                    stockGroupId = `sg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+                }
+                let attarId = null
+                for (const cat of cats) {
+                    const payload = { ...payloadForCategory(cat), stockGroupId }
+                    const existing = list.find(
+                        (p) =>
+                            p.categoryId === cat.id &&
+                            (p.name || '').toLowerCase() === payload.name.toLowerCase() &&
+                            !p.isGroup
+                    )
+                    let saved
+                    if (existing) {
+                        saved = await api.updateProduct(existing.id, payload)
+                    } else {
+                        saved = await api.createProduct(payload)
+                    }
+                    if ((cat.name || '').toLowerCase() === 'attar') {
+                        attarId = saved?.id || existing?.id || null
+                    }
+                }
+                // Spray recipe oil → Attar row so spray sales deduct shared oil stock
+                if (attarId) {
+                    const sprayCat = cats.find((c) => (c.name || '').toLowerCase() === 'spray')
+                    if (sprayCat) {
+                        const spray = asArray(
+                            await api.getProducts({ active: 'false' })
+                        ).find(
+                            (p) =>
+                                p.categoryId === sprayCat.id &&
+                                (p.name || '').toLowerCase() === basePayload.name.toLowerCase() &&
+                                !p.isGroup
+                        )
+                        if (spray) {
+                            await api.updateProduct(spray.id, {
+                                oilProductId: attarId,
+                                stockGroupId,
+                                stockQty: basePayload.stockQty,
+                            })
+                        }
+                    }
+                }
+            } else if (editing) {
+                await api.updateProduct(editing.id, basePayload)
+            } else {
+                await api.createProduct(basePayload)
+            }
+
+            const [p, c] = await Promise.all([
+                api.getProducts({ active: 'false' }),
+                api.getCategories(),
+            ])
+            const list = asArray(p)
+            setProducts(list)
+            const cats = asArray(c)
+            setCategories(cats)
+            await syncCache(list)
             setShowForm(false)
             setEditing(null)
+            setForm(emptyForm)
         } catch (err) {
             setError(err?.message || 'Save failed')
         } finally {
@@ -420,40 +515,39 @@ export default function ProductsPage() {
                     <div className="grid grid-cols-2 gap-2">
                         {pageRows.map((row) => {
                             const p = row.product
+                            const qty = formatStock(p)
                             return (
-                                <div key={p.id} className="card p-2.5 flex flex-row items-center gap-2 min-h-[72px] shadow-soft border border-[#E5E0D8]">
+                                <div
+                                    key={p.id}
+                                    className="self-start w-full bg-white rounded-2xl border border-[#E5E0D8] shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-3 py-2.5 flex items-center gap-2 min-h-[56px]"
+                                >
                                     <div className="flex-1 min-w-0">
-                                        <div className="font-medium text-[13px] text-charcoal leading-tight line-clamp-2">
+                                        <div className="font-semibold text-[13px] text-charcoal leading-tight truncate">
                                             {p?.name || '—'}
                                             {p?.isActive === false && (
-                                                <span className="ml-1 text-[10px] font-semibold text-muted">inactive</span>
+                                                <span className="ml-1 text-[10px] font-medium text-muted">· off</span>
                                             )}
                                         </div>
-                                        <div className="text-[12px] text-muted mt-0.5">
-                                            {formatINR(p?.unitPrice)}
-                                            {p?.productType === 'PER_ML' ? '/ml' : ''}
-                                            {formatStock(p) ? ` · Qty ${formatStock(p)}` : ''}
+                                        <div className="text-[12px] text-muted mt-0.5 truncate">
+                                            {qty ? `Qty ${qty}` : 'Qty —'}
                                         </div>
                                     </div>
-                                    <div className="flex items-center justify-end gap-1.5">
-                                        <button
-                                            type="button"
-                                            onClick={() => openEdit(p)}
-                                            className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted hover:text-emerald hover:border-emerald active:bg-ivory transition-colors"
-                                            aria-label="Edit product"
-                                        >
-                                            <Pencil size={14} />
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => setDeleteId(p.id)}
-                                            className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-red-500 hover:bg-red-50 active:bg-red-50 transition-colors"
-                                            aria-label="Delete product"
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
-                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => openEdit(p)}
+                                        className="w-7 h-7 rounded-full bg-emerald text-white flex items-center justify-center shrink-0 active:scale-95 transition-transform"
+                                        aria-label="Edit product"
+                                    >
+                                        <Pencil size={13} strokeWidth={2.5} />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setDeleteId(p.id)}
+                                        className="w-7 h-7 rounded-full border border-border text-muted flex items-center justify-center shrink-0 active:bg-red-50 active:text-red-600 active:border-red-200 transition-colors"
+                                        aria-label="Delete product"
+                                    >
+                                        <Trash2 size={13} />
+                                    </button>
                                 </div>
                             )
                         })}
@@ -537,7 +631,7 @@ export default function ProductsPage() {
                                     setForm({
                                         ...form,
                                         productType: e.target.value,
-                                        unit: e.target.value === 'PER_ML' ? 'ml' : 'piece',
+                                        unit: e.target.value === 'PER_ML' || e.target.value === 'SPRAY' ? 'ml' : 'piece',
                                         isGroup: false,
                                         parentId: '',
                                     })
@@ -549,59 +643,25 @@ export default function ProductsPage() {
                             </select>
                         </div>
 
-                        {form.productType === 'SPRAY' && (
-                            <div className="space-y-2.5 rounded-xl border border-border p-3 bg-ivory/50">
-                                <p className="text-[11px] text-muted leading-snug">
-                                    One product like Attar. On bill, staff picks 10–100 ml. Stock uses oil + water + bottle.
-                                </p>
-                                <div>
-                                    <label className="text-[10px] uppercase tracking-wide text-muted font-semibold mb-1 block">
-                                        Perfume oil (stock source)
-                                    </label>
-                                    <select
-                                        className="input"
-                                        value={form.oilProductId}
-                                        onChange={(e) => setForm({ ...form, oilProductId: e.target.value })}
-                                    >
-                                        <option value="">Select oil…</option>
-                                        {oilOptions.map((o) => (
-                                            <option key={o.id} value={o.id}>
-                                                {o.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-[10px] uppercase tracking-wide text-muted font-semibold mb-1 block">
-                                        Perfume water
-                                    </label>
-                                    <select
-                                        className="input"
-                                        value={form.waterProductId}
-                                        onChange={(e) => setForm({ ...form, waterProductId: e.target.value })}
-                                    >
-                                        <option value="">Select water…</option>
-                                        {waterOptions.map((o) => (
-                                            <option key={o.id} value={o.id}>
-                                                {o.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-[10px] uppercase tracking-wide text-muted font-semibold mb-1 block">
-                                        Oil ratio % (rest is water)
-                                    </label>
-                                    <input
-                                        className="input"
-                                        type="number"
-                                        min={0}
-                                        max={100}
-                                        value={form.oilRatioPercent}
-                                        onChange={(e) => setForm({ ...form, oilRatioPercent: e.target.value })}
-                                    />
-                                </div>
-                            </div>
+                        {(form.productType === 'PER_ML' || form.productType === 'SPRAY') && (
+                            <label className="flex items-start gap-3 rounded-xl border border-border bg-ivory/40 p-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="mt-0.5 w-4 h-4 rounded accent-emerald shrink-0"
+                                    checked={Boolean(form.mirrorFragrance)}
+                                    onChange={(e) =>
+                                        setForm({ ...form, mirrorFragrance: e.target.checked })
+                                    }
+                                />
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-semibold text-charcoal">
+                                        Also add to Attar, Oud &amp; Spray
+                                    </span>
+                                    <span className="block text-[11px] text-muted mt-0.5 leading-snug">
+                                        Same oil in Attar, Oud & Spray — one shared stock. A sale in any section updates qty on all three.
+                                    </span>
+                                </span>
+                            </label>
                         )}
 
                         <div className="grid grid-cols-2 gap-2.5">
