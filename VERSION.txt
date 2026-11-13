@@ -1,9 +1,6 @@
-Amwaj POS v1.7.6 (20261112)
+Amwaj POS v1.7.7 (20261113)
 
-- Shared stock for mirrored Attar / Oud / Spray (stockGroupId)
-- Bill complete: deducting one mirror updates qty on all in the group
-- Edit stock on one product syncs the group
-- Mirror checkbox creates one stockGroupId + links Spray oil → Attar product
+- Mirror checkbox only for Attar / Oud / Spray (hidden for Bakhoor & Accessories)
+- Product unit: dropdown ml | piece (all add/edit)
 
-Migration required:
-  cd backend && npx prisma migrate deploy && npx prisma generate
+No DB migration.

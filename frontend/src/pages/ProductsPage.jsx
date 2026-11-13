@@ -609,7 +609,16 @@ export default function ProductsPage() {
                             <select
                                 className="input"
                                 value={form.categoryId}
-                                onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+                                onChange={(e) => {
+                                    const id = e.target.value
+                                    const name = (categories.find((c) => c.id === id)?.name || '').toLowerCase()
+                                    const keepMirror = ['attar', 'oud', 'spray'].includes(name)
+                                    setForm({
+                                        ...form,
+                                        categoryId: id,
+                                        mirrorFragrance: keepMirror ? form.mirrorFragrance : false,
+                                    })
+                                }}
                                 required
                             >
                                 {categories.map((c) => (
@@ -643,26 +652,35 @@ export default function ProductsPage() {
                             </select>
                         </div>
 
-                        {(form.productType === 'PER_ML' || form.productType === 'SPRAY') && (
-                            <label className="flex items-start gap-3 rounded-xl border border-border bg-ivory/40 p-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    className="mt-0.5 w-4 h-4 rounded accent-emerald shrink-0"
-                                    checked={Boolean(form.mirrorFragrance)}
-                                    onChange={(e) =>
-                                        setForm({ ...form, mirrorFragrance: e.target.checked })
-                                    }
-                                />
-                                <span className="min-w-0">
-                                    <span className="block text-sm font-semibold text-charcoal">
-                                        Also add to Attar, Oud &amp; Spray
+                        {(() => {
+                            const catName = (
+                                categories.find((c) => c.id === form.categoryId)?.name || ''
+                            ).toLowerCase()
+                            const fragranceCat = ['attar', 'oud', 'spray'].includes(catName)
+                            const fragranceType =
+                                form.productType === 'PER_ML' || form.productType === 'SPRAY'
+                            if (!fragranceCat || !fragranceType) return null
+                            return (
+                                <label className="flex items-start gap-3 rounded-xl border border-border bg-ivory/40 p-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        className="mt-0.5 w-4 h-4 rounded accent-emerald shrink-0"
+                                        checked={Boolean(form.mirrorFragrance)}
+                                        onChange={(e) =>
+                                            setForm({ ...form, mirrorFragrance: e.target.checked })
+                                        }
+                                    />
+                                    <span className="min-w-0">
+                                        <span className="block text-sm font-semibold text-charcoal">
+                                            Also add to Attar, Oud &amp; Spray
+                                        </span>
+                                        <span className="block text-[11px] text-muted mt-0.5 leading-snug">
+                                            Same oil in Attar, Oud &amp; Spray — one shared stock. A sale in any section updates qty on all three.
+                                        </span>
                                     </span>
-                                    <span className="block text-[11px] text-muted mt-0.5 leading-snug">
-                                        Same oil in Attar, Oud & Spray — one shared stock. A sale in any section updates qty on all three.
-                                    </span>
-                                </span>
-                            </label>
-                        )}
+                                </label>
+                            )
+                        })()}
 
                         <div className="grid grid-cols-2 gap-2.5">
                                     <div>
@@ -723,12 +741,14 @@ export default function ProductsPage() {
                                     <label className="text-[10px] uppercase tracking-wide text-muted font-semibold mb-1 block">
                                         Unit
                                     </label>
-                                    <input
+                                    <select
                                         className="input"
-                                        value={form.unit}
+                                        value={form.unit === 'pcs' || form.unit === 'packet' ? 'piece' : (form.unit || 'ml')}
                                         onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                                        placeholder="ml / piece"
-                                    />
+                                    >
+                                        <option value="ml">ml</option>
+                                        <option value="piece">piece</option>
+                                    </select>
                                 </div>
                         <div className="flex gap-2 pt-2">
                             <button
