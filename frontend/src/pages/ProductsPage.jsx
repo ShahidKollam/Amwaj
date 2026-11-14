@@ -45,7 +45,7 @@ const emptyForm = {
     bottleProductId: '',
     oilRatioPercent: '50',
     sortOrder: '0',
-    mirrorFragrance: false, // Attar + Oud + Spray in one go
+    mirrorFragrance: false, // Attar + Spray only (shared stock)
 }
 
 function formatStock(p) {
@@ -325,7 +325,7 @@ export default function ProductsPage() {
 
         /** Resolve Attar / Oud / Spray category ids by name */
         const fragranceCats = () => {
-            const want = ['attar', 'oud', 'spray']
+            const want = ['attar', 'spray'] // not Oud
             const out = []
             for (const w of want) {
                 const c = (categories || []).find((x) => (x.name || '').toLowerCase() === w)
@@ -352,13 +352,13 @@ export default function ProductsPage() {
         try {
             if (form.mirrorFragrance) {
                 const cats = fragranceCats()
-                if (cats.length < 3) {
-                    setError('Need Attar, Oud and Spray categories to mirror. Create them first.')
+                if (cats.length < 2) {
+                    setError('Need Attar and Spray categories to mirror. Create them first.')
                     setBusy(false)
                     return
                 }
                 const list = asArray(products)
-                // One physical stock shared by Attar + Oud + Spray
+                // One physical stock shared by Attar + Spray only
                 let stockGroupId =
                     list.find(
                         (p) =>
@@ -612,7 +612,7 @@ export default function ProductsPage() {
                                 onChange={(e) => {
                                     const id = e.target.value
                                     const name = (categories.find((c) => c.id === id)?.name || '').toLowerCase()
-                                    const keepMirror = ['attar', 'oud', 'spray'].includes(name)
+                                    const keepMirror = ['attar', 'spray'].includes(name)
                                     setForm({
                                         ...form,
                                         categoryId: id,
@@ -656,7 +656,7 @@ export default function ProductsPage() {
                             const catName = (
                                 categories.find((c) => c.id === form.categoryId)?.name || ''
                             ).toLowerCase()
-                            const fragranceCat = ['attar', 'oud', 'spray'].includes(catName)
+                            const fragranceCat = ['attar', 'spray'].includes(catName)
                             const fragranceType =
                                 form.productType === 'PER_ML' || form.productType === 'SPRAY'
                             if (!fragranceCat || !fragranceType) return null
@@ -672,10 +672,10 @@ export default function ProductsPage() {
                                     />
                                     <span className="min-w-0">
                                         <span className="block text-sm font-semibold text-charcoal">
-                                            Also add to Attar, Oud &amp; Spray
+                                            Also add to Attar &amp; Spray
                                         </span>
                                         <span className="block text-[11px] text-muted mt-0.5 leading-snug">
-                                            Same oil in Attar, Oud &amp; Spray — one shared stock. A sale in any section updates qty on all three.
+                                            Same oil in Attar and Spray — one shared stock. Not added to Oud. Sale in either section updates qty on both.
                                         </span>
                                     </span>
                                 </label>

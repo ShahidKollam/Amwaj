@@ -44,6 +44,21 @@ function fromPaise(paise) {
 
 const SPRAY_SIZES = [10, 20, 30, 40, 50, 100]
 
+/** Spray bill: oil ml × oil rate + water ml × water rate + bottle (if included) */
+function calcSprayLinePaise({ bottleMl, ratio, oilRatePaise, waterRatePaise, bottlePricePaise, includeBottle }) {
+    const ml = Number(bottleMl) || 0
+    const r = Math.min(100, Math.max(0, Number(ratio) || 0))
+    const oilMl = ml > 0 ? Math.round(((ml * r) / 100) * 1000) / 1000 : 0
+    const waterMl = ml > 0 ? Math.round((ml - oilMl) * 1000) / 1000 : 0
+    const oilP = Math.max(0, Number(oilRatePaise) || 0)
+    const waterP = Math.max(0, Number(waterRatePaise) || 0)
+    const bottleP = Math.max(0, Number(bottlePricePaise) || 0)
+    const include = includeBottle !== false
+    const total = Math.round(oilMl * oilP + waterMl * waterP + (include ? bottleP : 0))
+    return { oilMl, waterMl, unitPricePaise: Math.max(0, total) }
+}
+
+
 export default function BillPage() {
     const { user } = useAuth()
     const [categories, setCategories] = useState([])
@@ -267,22 +282,41 @@ export default function BillPage() {
             }
             if (product.productType === 'SPRAY') {
                 const bottleMl = product.bottleSizeMl || null
-                const ratio = 50 // default mix; editable on bill line
-                const oilMl =
-                    bottleMl != null ? Math.round(((bottleMl * ratio) / 100) * 1000) / 1000 : null
-                // Flat composite spray: unitPrice is per ml (unit === 'ml')
-                // Ready-made spray: unitPrice is full unit price (unit === 'piece')
-                const perMl = Number(product.unitPrice) || 0
-                const isPerMl = (product.unit || '').toLowerCase() === 'ml'
-                const fullPrice =
-                    isPerMl && bottleMl != null && perMl > 0
-                        ? Math.round(bottleMl * perMl)
-                        : Number(product.unitPrice) || 0
+                const ratio = 50 // default 50% oil / 50% water; editable on bill
+                const list = Array.isArray(products) ? products : []
+
+                // Oil rate (paise/ml): linked oil product, or spray unitPrice as oil rate
+                let oilRatePaise = product.oilProduct?.unitPrice
+                    ? Number(product.oilProduct.unitPrice)
+                    : 0
+                if (!oilRatePaise && product.oilProductId) {
+                    const oil = list.find((x) => x.id === product.oilProductId)
+                    if (oil?.unitPrice) oilRatePaise = Number(oil.unitPrice)
+                }
+                if (!oilRatePaise) oilRatePaise = Number(product.unitPrice) || 0
+
+                // Water rate (paise/ml): linked water or catalog "Spray Water"
+                let waterRatePaise = product.waterProduct?.unitPrice
+                    ? Number(product.waterProduct.unitPrice)
+                    : 0
+                if (!waterRatePaise && product.waterProductId) {
+                    const w = list.find((x) => x.id === product.waterProductId)
+                    if (w?.unitPrice) waterRatePaise = Number(w.unitPrice)
+                }
+                if (!waterRatePaise) {
+                    const waterSku = list.find(
+                        (x) =>
+                            !x.isGroup &&
+                            (x.name || '').toLowerCase().includes('spray water')
+                    )
+                    if (waterSku?.unitPrice) waterRatePaise = Number(waterSku.unitPrice)
+                }
+
                 let bottlePricePaise = product.bottleProduct?.unitPrice
                     ? Number(product.bottleProduct.unitPrice)
                     : 0
-                if (!bottlePricePaise && bottleMl && Array.isArray(products)) {
-                    const bottleSku = products.find(
+                if (!bottlePricePaise && bottleMl) {
+                    const bottleSku = list.find(
                         (x) =>
                             x.productType === 'FIXED' &&
                             !x.isGroup &&
@@ -290,6 +324,16 @@ export default function BillPage() {
                     )
                     if (bottleSku?.unitPrice) bottlePricePaise = Number(bottleSku.unitPrice)
                 }
+
+                const calc = calcSprayLinePaise({
+                    bottleMl,
+                    ratio,
+                    oilRatePaise,
+                    waterRatePaise,
+                    bottlePricePaise,
+                    includeBottle: true,
+                })
+                const fullPrice = calc.unitPricePaise
                 const displayName =
                     bottleMl != null ? `${product.name} · ${bottleMl} ml` : product.name
                 return [
@@ -305,10 +349,12 @@ export default function BillPage() {
                         lineTotalPaise: fullPrice,
                         discountPaise: 0,
                         sprayBottleMl: bottleMl,
-                        sprayOilMl: oilMl,
+                        sprayOilMl: calc.oilMl,
                         oilRatioPercent: ratio,
                         sprayIncludeBottle: true,
                         bottlePricePaise,
+                        oilRatePaise,
+                        waterRatePaise,
                         fullUnitPricePaise: fullPrice,
                     },
                 ]
@@ -401,19 +447,23 @@ export default function BillPage() {
                 const include = next.sprayIncludeBottle !== false
                 next.sprayIncludeBottle = include
 
-                // fullUnitPricePaise = price at 50% oil WITH bottle (as added from catalog)
-                const fullWithBottle =
-                    next.fullUnitPricePaise != null ? next.fullUnitPricePaise : next.unitPricePaise
-                const bottleP = Math.max(0, Number(next.bottlePricePaise) || 0)
-                const liquidAt50 = Math.max(0, fullWithBottle - bottleP)
-                // Scale liquid portion by oil ratio vs default 50% (more oil → higher bill)
-                const defaultRatio = 50
-                const liquidNow = Math.round(liquidAt50 * (ratio / defaultRatio))
-                const unit = Math.max(0, liquidNow + (include ? bottleP : 0))
-                next.unitPricePaise = unit
+                // Formula: oil ml × oil rate + water ml × water rate + bottle (if on)
+                const calc = calcSprayLinePaise({
+                    bottleMl,
+                    ratio,
+                    oilRatePaise: next.oilRatePaise,
+                    waterRatePaise: next.waterRatePaise,
+                    bottlePricePaise: next.bottlePricePaise,
+                    includeBottle: include,
+                })
+                next.sprayOilMl = calc.oilMl
+                next.unitPricePaise = calc.unitPricePaise
                 const qty =
                     typeof next.quantity === 'number' ? next.quantity : parseFloat(next.quantity) || 0
-                next.lineTotalPaise = Math.max(0, Math.round(qty * unit) - (next.discountPaise || 0))
+                next.lineTotalPaise = Math.max(
+                    0,
+                    Math.round(qty * calc.unitPricePaise) - (next.discountPaise || 0)
+                )
                 return next
             })
         )
@@ -929,8 +979,38 @@ export default function BillPage() {
                         </div>
                         <div className="grid grid-cols-3 gap-2">
                             {SPRAY_SIZES.map((ml) => {
-                                const perMl = Number(sizePickProduct.unitPrice) || 0
-                                const price = Math.round(ml * perMl)
+                                const list = Array.isArray(products) ? products : []
+                                let oilR = sizePickProduct.oilProduct?.unitPrice
+                                    ? Number(sizePickProduct.oilProduct.unitPrice)
+                                    : 0
+                                if (!oilR && sizePickProduct.oilProductId) {
+                                    const o = list.find((x) => x.id === sizePickProduct.oilProductId)
+                                    if (o?.unitPrice) oilR = Number(o.unitPrice)
+                                }
+                                if (!oilR) oilR = Number(sizePickProduct.unitPrice) || 0
+                                let waterR = 0
+                                const waterSku = list.find(
+                                    (x) =>
+                                        !x.isGroup &&
+                                        (x.name || '').toLowerCase().includes('spray water')
+                                )
+                                if (waterSku?.unitPrice) waterR = Number(waterSku.unitPrice)
+                                let bottleP = 0
+                                const bottleSku = list.find(
+                                    (x) =>
+                                        x.productType === 'FIXED' &&
+                                        !x.isGroup &&
+                                        Number(x.bottleSizeMl) === Number(ml)
+                                )
+                                if (bottleSku?.unitPrice) bottleP = Number(bottleSku.unitPrice)
+                                const price = calcSprayLinePaise({
+                                    bottleMl: ml,
+                                    ratio: 50,
+                                    oilRatePaise: oilR,
+                                    waterRatePaise: waterR,
+                                    bottlePricePaise: bottleP,
+                                    includeBottle: true,
+                                }).unitPricePaise
                                 return (
                                     <button
                                         key={ml}

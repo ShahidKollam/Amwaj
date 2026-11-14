@@ -1,6 +1,8 @@
-Amwaj POS v1.7.7 (20261113)
+Amwaj POS v1.7.9 (20261113)
 
-- Mirror checkbox only for Attar / Oud / Spray (hidden for Bakhoor & Accessories)
-- Product unit: dropdown ml | piece (all add/edit)
+- Oud: mirror checkbox still hidden (Attar + Spray only)
+- Spray bill price formula:
+  oil ml × oil rate + water ml × water rate + bottle rate
+  (default 50% oil / 50% water; editable on bill)
 
-No DB migration.
+No DB migration for this formula change.
