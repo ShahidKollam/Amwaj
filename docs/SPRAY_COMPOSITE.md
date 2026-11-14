@@ -31,9 +31,11 @@ Internal stock on **bill complete** deducts three catalog items:
 - Old invoices remain valid (snapshot data).
 
 ## Admin setup
-1. Accessories: **Spray Water** (unit `ml`) + **10–100 ml Spray Bottle** (piece).
-2. Create spray **group** → select oil, water, oil %.
-3. Add **size children** under the group → bottle size + bottle SKU + selling price.
+1. Accessories:
+   - **Spray Water** (unit `ml`) — name should include “Spray Water” for auto-fallback.
+   - Empty bottles: product type **Spray bottle**, set **Bottle size (ml)** (10 / 20 / 30 / 40 / 50 / 100).
+2. Create spray product → link oil (and optionally water). Oil % default 50.
+3. On bill: pick spray size → system matches bottle by `bottleSizeMl` and deducts oil + water + bottle.
 
 ## Migration (existing DB)
 ```bash

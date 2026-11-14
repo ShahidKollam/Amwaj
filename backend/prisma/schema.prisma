@@ -13,9 +13,10 @@ enum Role {
 }
 
 enum ProductType {
-  PER_ML      // Attar / Oud
-  SPRAY
-  FIXED       // Bakhoor, Accessories, bottles
+  PER_ML        // Attar / Oud (priced per ml)
+  SPRAY         // Finished spray / composite fill
+  FIXED         // Bakhoor, tools, general accessories
+  SPRAY_BOTTLE  // Empty spray bottle (Accessories) — requires bottleSizeMl
 }
 
 enum PaymentMethod {

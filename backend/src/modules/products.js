@@ -81,7 +81,7 @@ router.get('/', async (req, res, next) => {
 const productSchema = z.object({
   name: z.string().min(1),
   categoryId: z.string(),
-  productType: z.enum(['PER_ML', 'SPRAY', 'FIXED']),
+  productType: z.enum(['PER_ML', 'SPRAY', 'FIXED', 'SPRAY_BOTTLE']),
   // Group parents may use 0; sellable must be positive (validated below)
   unitPrice: z.number().int().nonnegative(),
   purchasePrice: z.number().int().nonnegative().nullable().optional(),
@@ -114,6 +114,17 @@ function assertSellablePrice(data) {
     data.parentId = null;
     data.stockQty = 0;
     data.bottleProductId = null;
+  }
+  // Empty spray bottles must declare capacity so composite sprays can match by size
+  if (data.productType === 'SPRAY_BOTTLE') {
+    data.unit = data.unit || 'piece';
+    data.isGroup = false;
+    data.parentId = null;
+    if (data.bottleSizeMl == null || !(Number(data.bottleSizeMl) > 0)) {
+      const err = new Error('Bottle size (ml) is required for Spray bottle products');
+      err.status = 400;
+      throw err;
+    }
   }
 }
 

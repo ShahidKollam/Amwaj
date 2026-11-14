@@ -1,7 +1,7 @@
-Amwaj POS v1.7.13 (20261114)
+Amwaj POS v1.7.14 (20261114)
 
-- Reports: Item retail summary (name, category, qty, sell rate, purchase rate, sales, cost, profit)
-- Grand totals + expand/collapse; horizontal scroll on mobile
-- Excel (CSV) and PDF downloads include full item retail table
-
-No DB migration.
+- Product type: Spray bottle (SPRAY_BOTTLE) for empty spray bottles in Accessories
+- Products form shows Bottle size (ml) + info when type is Spray bottle
+- Composite spray matching prefers SPRAY_BOTTLE by size; legacy FIXED+bottleSizeMl still works
+- API validates bottle size (ml) required for SPRAY_BOTTLE
+- DB migration: add ProductType.SPRAY_BOTTLE

@@ -327,12 +327,15 @@ export default function BillPage() {
                     ? Number(product.bottleProduct.unitPrice)
                     : 0
                 if (!bottlePricePaise && bottleMl) {
-                    const bottleSku = list.find(
-                        (x) =>
-                            x.productType === 'FIXED' &&
-                            !x.isGroup &&
-                            Number(x.bottleSizeMl) === Number(bottleMl)
-                    )
+                    const matchBottle = (preferType) =>
+                        list.find(
+                            (x) =>
+                                x.productType === preferType &&
+                                !x.isGroup &&
+                                Number(x.bottleSizeMl) === Number(bottleMl)
+                        )
+                    const bottleSku =
+                        matchBottle('SPRAY_BOTTLE') || matchBottle('FIXED')
                     if (bottleSku?.unitPrice) bottlePricePaise = Number(bottleSku.unitPrice)
                 }
 
@@ -1007,12 +1010,15 @@ export default function BillPage() {
                                 )
                                 if (waterSku?.unitPrice) waterR = Number(waterSku.unitPrice)
                                 let bottleP = 0
-                                const bottleSku = list.find(
-                                    (x) =>
-                                        x.productType === 'FIXED' &&
-                                        !x.isGroup &&
-                                        Number(x.bottleSizeMl) === Number(ml)
-                                )
+                                const matchBottle = (preferType) =>
+                                    list.find(
+                                        (x) =>
+                                            x.productType === preferType &&
+                                            !x.isGroup &&
+                                            Number(x.bottleSizeMl) === Number(ml)
+                                    )
+                                const bottleSku =
+                                    matchBottle('SPRAY_BOTTLE') || matchBottle('FIXED')
                                 if (bottleSku?.unitPrice) bottleP = Number(bottleSku.unitPrice)
                                 const price = calcSprayLinePaise({
                                     bottleMl: ml,

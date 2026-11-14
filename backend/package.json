@@ -8,6 +8,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "node prisma/seed.js",
+    "db:seed:admin": "node prisma/seed.admin.js",
     "db:reset": "prisma migrate reset --force"
   },
   "dependencies": {

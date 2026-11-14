@@ -52,7 +52,8 @@ function formatStock(p) {
     if (!p || p.isGroup) return null
     const n = Number(p.stockQty)
     if (!Number.isFinite(n)) return '0'
-    const unit = p.productType === 'PER_ML' ? 'ml' : p.unit || 'pcs'
+    const unit =
+        p.productType === 'PER_ML' || p.productType === 'SPRAY' ? 'ml' : p.unit || 'pcs'
     // trim trailing zeros for display
     const s = Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000)
     return `${s} ${unit}`
@@ -218,14 +219,16 @@ export default function ProductsPage() {
             ),
         [products]
     )
-    /** Empty bottles */
+    /** Empty bottles (SPRAY_BOTTLE preferred; legacy FIXED with size still listed) */
     const bottleOptions = useMemo(
         () =>
             (Array.isArray(products) ? products : []).filter(
                 (p) =>
                     !p.isGroup &&
-                    p.productType === 'FIXED' &&
-                    (p.bottleSizeMl != null || (p.name || '').toLowerCase().includes('bottle'))
+                    (p.productType === 'SPRAY_BOTTLE' ||
+                        (p.productType === 'FIXED' &&
+                            (p.bottleSizeMl != null ||
+                                (p.name || '').toLowerCase().includes('bottle'))))
             ),
         [products]
     )
@@ -284,18 +287,32 @@ export default function ProductsPage() {
         setBusy(true)
         setError('')
         const isGroup = form.productType === 'SPRAY' ? false : Boolean(form.isGroup)
+        if (form.productType === 'SPRAY_BOTTLE') {
+            const ml = Math.round(Number(form.bottleSizeMl))
+            if (!Number.isFinite(ml) || ml <= 0) {
+                setError('Bottle size (ml) is required for Spray bottle products')
+                setBusy(false)
+                return
+            }
+        }
         const basePayload = {
             name: form.name.trim(),
             categoryId: form.categoryId,
             productType: form.productType,
             unitPrice: isGroup ? 0 : Math.round(Number(form.unitPrice) * 100),
-            unit: form.unit || (form.productType === 'PER_ML' || form.productType === 'SPRAY' ? 'ml' : 'piece'),
+            unit:
+                form.productType === 'SPRAY_BOTTLE'
+                    ? 'piece'
+                    : form.unit ||
+                      (form.productType === 'PER_ML' || form.productType === 'SPRAY' ? 'ml' : 'piece'),
             isGroup,
             parentId: isGroup ? null : form.parentId || null,
             bottleSizeMl:
-                !isGroup && form.bottleSizeMl !== '' && form.bottleSizeMl != null
+                form.productType === 'SPRAY_BOTTLE'
                     ? Math.round(Number(form.bottleSizeMl))
-                    : null,
+                    : !isGroup && form.bottleSizeMl !== '' && form.bottleSizeMl != null
+                      ? Math.round(Number(form.bottleSizeMl))
+                      : null,
             stockQty: isGroup ? 0 : Math.max(0, Number(form.stockQty) || 0),
             oilProductId: form.oilProductId || null,
             waterProductId: form.waterProductId || null,
@@ -638,21 +655,56 @@ export default function ProductsPage() {
                             <select
                                 className="input"
                                 value={form.productType}
-                                onChange={(e) =>
+                                onChange={(e) => {
+                                    const t = e.target.value
                                     setForm({
                                         ...form,
-                                        productType: e.target.value,
-                                        unit: e.target.value === 'PER_ML' || e.target.value === 'SPRAY' ? 'ml' : 'piece',
+                                        productType: t,
+                                        unit:
+                                            t === 'PER_ML' || t === 'SPRAY'
+                                                ? 'ml'
+                                                : t === 'SPRAY_BOTTLE'
+                                                  ? 'piece'
+                                                  : 'piece',
                                         isGroup: false,
                                         parentId: '',
+                                        bottleSizeMl: t === 'SPRAY_BOTTLE' ? form.bottleSizeMl : form.bottleSizeMl,
                                     })
-                                }
+                                }}
                             >
-                                <option value="PER_ML">Per ml (Attar/Oud/Spray)</option>
+                                <option value="PER_ML">Per ml (Attar/Oud)</option>
                                 <option value="SPRAY">Spray (composite)</option>
                                 <option value="FIXED">Fixed price</option>
+                                <option value="SPRAY_BOTTLE">Spray bottle</option>
                             </select>
                         </div>
+
+                        {form.productType === 'SPRAY_BOTTLE' && (
+                            <div className="rounded-xl border border-emerald/25 bg-emerald/5 p-3 space-y-2.5">
+                                <div>
+                                    <label className="text-[10px] uppercase tracking-wide text-muted font-semibold mb-1 block">
+                                        Bottle size (ml)
+                                    </label>
+                                    <input
+                                        className="input"
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        placeholder="e.g. 10, 20, 30, 50, 100"
+                                        value={form.bottleSizeMl}
+                                        onChange={(e) =>
+                                            setForm({ ...form, bottleSizeMl: e.target.value })
+                                        }
+                                        required
+                                    />
+                                </div>
+                                <p className="text-[11px] text-muted leading-snug">
+                                    Empty spray bottles used when building composite sprays. On bill
+                                    complete, the system matches this size and deducts one unit from
+                                    stock and cost for each spray sold at that size.
+                                </p>
+                            </div>
+                        )}
 
                         {(() => {
                             const catName = (

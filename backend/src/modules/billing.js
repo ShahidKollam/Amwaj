@@ -133,18 +133,23 @@ router.post('/complete', async (req, res, next) => {
       });
     }
 
-    // Bottle SKUs by size (Accessories) — for flat sprays without size children
+    // Bottle SKUs by size (Accessories) — SPRAY_BOTTLE preferred; FIXED+bottleSizeMl still accepted
     const bottleSkus = await prisma.product.findMany({
       where: {
-        productType: 'FIXED',
+        productType: { in: ['SPRAY_BOTTLE', 'FIXED'] },
         isActive: true,
         isGroup: false,
         bottleSizeMl: { not: null },
       },
-      select: { id: true, bottleSizeMl: true, purchasePrice: true },
+      select: { id: true, bottleSizeMl: true, purchasePrice: true, productType: true },
     });
     const bottleIdByMl = {};
-    for (const b of bottleSkus) {
+    // Prefer SPRAY_BOTTLE over legacy FIXED when both exist for the same size
+    const sortedBottles = [...bottleSkus].sort((a, b) => {
+      const score = (p) => (p.productType === 'SPRAY_BOTTLE' ? 0 : 1);
+      return score(a) - score(b);
+    });
+    for (const b of sortedBottles) {
       if (b.bottleSizeMl != null && bottleIdByMl[b.bottleSizeMl] == null) {
         bottleIdByMl[b.bottleSizeMl] = b.id;
       }
