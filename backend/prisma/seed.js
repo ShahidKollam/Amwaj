@@ -395,13 +395,14 @@
 //     await prisma.$disconnect();
 //   });
 /**
- * Amwaj POS — admin-only seed (no catalog / no demo data)
+ * Amwaj POS — admin + categories seed (no products / no demo items)
  *
  * Creates or updates:
  *   - OWNER user (default: admin / amwaj2024)
+ *   - Categories: Attar, Oud, Spray, Bakhoor, Accessories
  *   - Shop settings row if none exists (defaults only)
  *
- * Does NOT create staff, categories, products, or customers.
+ * Does NOT create staff, products, or customers.
  *
  * Usage:
  *   cd backend && node prisma/seed-admin.js
@@ -410,7 +411,7 @@
  * Override via env:
  *   SEED_ADMIN_USERNAME  SEED_ADMIN_PASSWORD  SEED_ADMIN_NAME
  *
- * Full demo catalog: npm run db:seed  (prisma/seed.js)
+ * Full demo catalog (products etc.): npm run db:seed
  */
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
@@ -431,8 +432,26 @@ async function main() {
     update: { name, passwordHash, role: 'OWNER', isActive: true },
     create: { name, username, passwordHash, role: 'OWNER' },
   });
-
   console.log('Admin (OWNER) ready:', admin.username);
+
+  const categoryDefs = [
+    { name: 'Attar', sortOrder: 1 },
+    { name: 'Oud', sortOrder: 2 },
+    { name: 'Spray', sortOrder: 3 },
+    { name: 'Bakhoor', sortOrder: 4 },
+    { name: 'Accessories', sortOrder: 5 },
+  ];
+  for (const cat of categoryDefs) {
+    await prisma.category.upsert({
+      where: { name: cat.name },
+      update: { sortOrder: cat.sortOrder, isActive: true },
+      create: { name: cat.name, sortOrder: cat.sortOrder },
+    });
+  }
+  console.log(
+    'Categories ready:',
+    categoryDefs.map((c) => c.name).join(', ')
+  );
 
   const existing = await prisma.shopSettings.findFirst();
   if (!existing) {
@@ -449,7 +468,7 @@ async function main() {
   }
 
   console.log(`Login: ${username} / ${password}`);
-  console.log('No products, categories, staff, or customers were added.');
+  console.log('No products, staff, or customers were added.');
 }
 
 main()
