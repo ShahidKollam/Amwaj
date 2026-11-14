@@ -46,6 +46,9 @@ export default function SettingsPage() {
   const [staffPwdOpen, setStaffPwdOpen] = useState(false);
   const [settings, setSettings] = useState(null);
   const [report, setReport] = useState(null);
+  const [topItemsOpen, setTopItemsOpen] = useState(false);
+  const [topCustomersOpen, setTopCustomersOpen] = useState(false);
+  const [itemRetailOpen, setItemRetailOpen] = useState(true);
   const [fromDate, setFromDate] = useState(todayISO());
   const [toDate, setToDate] = useState(todayISO());
   const [saving, setSaving] = useState(false);
@@ -206,6 +209,44 @@ export default function SettingsPage() {
       rows.push(['Est. profit (₹)', paiseToNum(report.totalProfitPaise)]);
     }
     rows.push([]);
+    rows.push(['Item retail summary']);
+    rows.push([
+      'Item',
+      'Category',
+      'Unit',
+      'Qty sold',
+      'Sell rate (₹)',
+      'Purchase rate (₹)',
+      'Sales (₹)',
+      'Cost (₹)',
+      'Profit (₹)',
+    ]);
+    (report.itemRetail || []).forEach((it) => {
+      rows.push([
+        it.name || '—',
+        it.category || '—',
+        it.unit || '',
+        it.qty ?? 0,
+        it.sellRatePaise != null ? paiseToNum(it.sellRatePaise) : '',
+        it.purchaseRatePaise != null ? paiseToNum(it.purchaseRatePaise) : '',
+        paiseToNum(it.salesPaise),
+        it.costPaise != null ? paiseToNum(it.costPaise) : '',
+        it.profitPaise != null ? paiseToNum(it.profitPaise) : '',
+      ]);
+    });
+    const rt = report.itemRetailTotals || {};
+    rows.push([
+      'GRAND TOTAL',
+      '',
+      '',
+      '',
+      '',
+      '',
+      paiseToNum(rt.salesPaise ?? report.totalSalesPaise),
+      rt.costPaise != null ? paiseToNum(rt.costPaise) : '',
+      rt.profitPaise != null ? paiseToNum(rt.profitPaise) : '',
+    ]);
+    rows.push([]);
     rows.push(['Top items']);
     rows.push(['Item', 'Qty', 'Sales (₹)']);
     (report.topItems || []).forEach((it) => {
@@ -244,6 +285,28 @@ export default function SettingsPage() {
   const downloadReportPdf = () => {
     if (!report) return;
     const shop = settings?.shopName || 'Amwaj';
+    const retailRows = (report.itemRetail || [])
+      .map(
+        (it) =>
+          `<tr>
+            <td>${escapeHtml(it.name || '—')}</td>
+            <td>${escapeHtml(it.category || '—')}</td>
+            <td style="text-align:right">${it.qty ?? 0}</td>
+            <td style="text-align:right">${it.sellRatePaise != null ? escapeHtml(formatINR(it.sellRatePaise)) : '—'}</td>
+            <td style="text-align:right">${it.purchaseRatePaise != null ? escapeHtml(formatINR(it.purchaseRatePaise)) : '—'}</td>
+            <td style="text-align:right">${escapeHtml(formatINR(it.salesPaise))}</td>
+            <td style="text-align:right">${it.costPaise != null ? escapeHtml(formatINR(it.costPaise)) : '—'}</td>
+            <td style="text-align:right">${it.profitPaise != null ? escapeHtml(formatINR(it.profitPaise)) : '—'}</td>
+          </tr>`
+      )
+      .join('');
+    const rt = report.itemRetailTotals || {};
+    const retailFoot = `<tr style="font-weight:700;background:#f3f0ea">
+      <td colspan="5">Grand total</td>
+      <td style="text-align:right">${escapeHtml(formatINR(rt.salesPaise ?? report.totalSalesPaise))}</td>
+      <td style="text-align:right">${rt.costPaise != null ? escapeHtml(formatINR(rt.costPaise)) : '—'}</td>
+      <td style="text-align:right">${rt.profitPaise != null ? escapeHtml(formatINR(rt.profitPaise)) : '—'}</td>
+    </tr>`;
     const top = (report.topItems || [])
       .map(
         (it) =>
@@ -292,7 +355,22 @@ export default function SettingsPage() {
         : ''
     }
   </div>
-  <h2 style="font-size:14px;margin:0 0 8px">Top items</h2>
+  <h2 style="font-size:14px;margin:0 0 8px">Item retail summary</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th><th>Category</th>
+        <th style="text-align:right">Qty</th>
+        <th style="text-align:right">Sell</th>
+        <th style="text-align:right">Purchase</th>
+        <th style="text-align:right">Sales</th>
+        <th style="text-align:right">Cost</th>
+        <th style="text-align:right">Profit</th>
+      </tr>
+    </thead>
+    <tbody>${retailRows || '<tr><td colspan="8">No items</td></tr>'}${retailRows ? retailFoot : ''}</tbody>
+  </table>
+  <h2 style="font-size:14px;margin:20px 0 8px">Top items</h2>
   <table><thead><tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Sales</th></tr></thead>
   <tbody>${top || '<tr><td colspan="3">No items</td></tr>'}</tbody></table>
   <h2 style="font-size:14px;margin:20px 0 8px">Top customers</h2>
@@ -536,44 +614,176 @@ export default function SettingsPage() {
               </p>
             )}
 
-            {(report.topItems || []).length > 0 && (
-              <div className="card p-3">
-                <p className="text-[10px] uppercase text-muted font-semibold mb-2">Top items</p>
-                <div className="space-y-2">
-                  {report.topItems.slice(0, 8).map((it) => (
-                    <div key={it.name} className="flex justify-between gap-2 text-sm">
-                      <span className="truncate text-charcoal min-w-0">
-                        {it.name}
-                        {it.profitPaise != null && (
-                          <span className="block text-[10px] text-muted font-normal">
-                            profit {formatINR(it.profitPaise)}
-                          </span>
-                        )}
-                      </span>
-                      <span className="shrink-0 font-semibold text-emerald">{formatINR(it.revenue)}</span>
+            {(report.itemRetail || []).length > 0 && (
+              <div className="card overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setItemRetailOpen((o) => !o)}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left active:bg-ivory/60"
+                >
+                  <span className="text-[10px] uppercase text-muted font-semibold tracking-wide">
+                    Item retail
+                    <span className="ml-1.5 font-normal normal-case text-muted">
+                      ({report.itemRetail.length})
+                    </span>
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className={`text-muted shrink-0 transition-transform ${itemRetailOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {itemRetailOpen && (
+                  <div className="border-t border-border/60">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[11px] min-w-[520px]">
+                        <thead>
+                          <tr className="text-muted text-left border-b border-border/60">
+                            <th className="px-2 py-1.5 font-semibold">Item</th>
+                            <th className="px-2 py-1.5 font-semibold">Cat</th>
+                            <th className="px-2 py-1.5 font-semibold text-right">Qty</th>
+                            <th className="px-2 py-1.5 font-semibold text-right">Sell</th>
+                            <th className="px-2 py-1.5 font-semibold text-right">Buy</th>
+                            <th className="px-2 py-1.5 font-semibold text-right">Sales</th>
+                            <th className="px-2 py-1.5 font-semibold text-right">Cost</th>
+                            <th className="px-2 py-1.5 font-semibold text-right">Profit</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.itemRetail.map((it) => (
+                            <tr key={it.name + (it.category || '')} className="border-b border-border/40 last:border-0">
+                              <td className="px-2 py-1.5 text-charcoal max-w-[120px] truncate font-medium">{it.name}</td>
+                              <td className="px-2 py-1.5 text-muted whitespace-nowrap">{it.category}</td>
+                              <td className="px-2 py-1.5 text-right tabular-nums">{it.qty}{it.unit ? ` ${it.unit}` : ''}</td>
+                              <td className="px-2 py-1.5 text-right tabular-nums">
+                                {it.sellRatePaise != null ? formatINR(it.sellRatePaise) : '—'}
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums">
+                                {it.purchaseRatePaise != null ? formatINR(it.purchaseRatePaise) : '—'}
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums font-medium text-emerald">
+                                {formatINR(it.salesPaise)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums">
+                                {it.costPaise != null ? formatINR(it.costPaise) : '—'}
+                              </td>
+                              <td
+                                className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
+                                  (it.profitPaise || 0) >= 0 ? 'text-emerald' : 'text-red-600'
+                                }`}
+                              >
+                                {it.profitPaise != null ? formatINR(it.profitPaise) : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-ivory/80 font-bold text-charcoal">
+                            <td className="px-2 py-2" colSpan={5}>
+                              Grand total
+                            </td>
+                            <td className="px-2 py-2 text-right text-emerald">
+                              {formatINR(report.itemRetailTotals?.salesPaise ?? report.totalSalesPaise)}
+                            </td>
+                            <td className="px-2 py-2 text-right">
+                              {report.itemRetailTotals?.costPaise != null
+                                ? formatINR(report.itemRetailTotals.costPaise)
+                                : '—'}
+                            </td>
+                            <td
+                              className={`px-2 py-2 text-right ${
+                                (report.itemRetailTotals?.profitPaise || 0) >= 0
+                                  ? 'text-emerald'
+                                  : 'text-red-600'
+                              }`}
+                            >
+                              {report.itemRetailTotals?.profitPaise != null
+                                ? formatINR(report.itemRetailTotals.profitPaise)
+                                : '—'}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
                     </div>
-                  ))}
-                </div>
+                    <p className="px-3 py-2 text-[10px] text-muted border-t border-border/40">
+                      Swipe sideways to see all columns. Excel / PDF include this full table.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(report.topItems || []).length > 0 && (
+              <div className="card overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setTopItemsOpen((o) => !o)}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left active:bg-ivory/60"
+                >
+                  <span className="text-[10px] uppercase text-muted font-semibold tracking-wide">
+                    Top items
+                    <span className="ml-1.5 font-normal normal-case text-muted">
+                      ({Math.min(8, report.topItems.length)})
+                    </span>
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className={`text-muted shrink-0 transition-transform ${topItemsOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {topItemsOpen && (
+                  <div className="px-3 pb-3 space-y-2 border-t border-border/60 pt-2">
+                    {report.topItems.slice(0, 8).map((it) => (
+                      <div key={it.name} className="flex justify-between gap-2 text-sm">
+                        <span className="truncate text-charcoal min-w-0">
+                          {it.name}
+                          {it.profitPaise != null && (
+                            <span className="block text-[10px] text-muted font-normal">
+                              profit {formatINR(it.profitPaise)}
+                            </span>
+                          )}
+                        </span>
+                        <span className="shrink-0 font-semibold text-emerald">{formatINR(it.revenue)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             {(report.topCustomers || []).length > 0 && (
-              <div className="card p-3">
-                <p className="text-[10px] uppercase text-muted font-semibold mb-2">Top customers</p>
-                <div className="space-y-2">
-                  {report.topCustomers.slice(0, 8).map((c) => (
-                    <div key={c.customerId || c.name} className="flex justify-between gap-2 text-sm">
-                      <span className="truncate text-charcoal min-w-0">
-                        {c.name}
-                        <span className="block text-[10px] text-muted font-normal">
-                          {c.mobile ? `${c.mobile} · ` : ''}
-                          {c.billCount} bill{c.billCount === 1 ? '' : 's'}
+              <div className="card overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setTopCustomersOpen((o) => !o)}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left active:bg-ivory/60"
+                >
+                  <span className="text-[10px] uppercase text-muted font-semibold tracking-wide">
+                    Top customers
+                    <span className="ml-1.5 font-normal normal-case text-muted">
+                      ({Math.min(8, report.topCustomers.length)})
+                    </span>
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className={`text-muted shrink-0 transition-transform ${topCustomersOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {topCustomersOpen && (
+                  <div className="px-3 pb-3 space-y-2 border-t border-border/60 pt-2">
+                    {report.topCustomers.slice(0, 8).map((c) => (
+                      <div key={c.customerId || c.name} className="flex justify-between gap-2 text-sm">
+                        <span className="truncate text-charcoal min-w-0">
+                          {c.name}
+                          <span className="block text-[10px] text-muted font-normal">
+                            {c.mobile ? `${c.mobile} · ` : ''}
+                            {c.billCount} bill{c.billCount === 1 ? '' : 's'}
+                          </span>
                         </span>
-                      </span>
-                      <span className="shrink-0 font-semibold text-emerald">{formatINR(c.revenue)}</span>
-                    </div>
-                  ))}
-                </div>
+                        <span className="shrink-0 font-semibold text-emerald">{formatINR(c.revenue)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

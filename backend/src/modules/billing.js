@@ -141,12 +141,57 @@ router.post('/complete', async (req, res, next) => {
         isGroup: false,
         bottleSizeMl: { not: null },
       },
-      select: { id: true, bottleSizeMl: true },
+      select: { id: true, bottleSizeMl: true, purchasePrice: true },
     });
     const bottleIdByMl = {};
     for (const b of bottleSkus) {
       if (b.bottleSizeMl != null && bottleIdByMl[b.bottleSizeMl] == null) {
         bottleIdByMl[b.bottleSizeMl] = b.id;
+      }
+      if (b.purchasePrice != null && b.purchasePrice >= 0) {
+        purchaseByProduct[b.id] = b.purchasePrice;
+      }
+    }
+
+    // Load purchase rates for oil / water / bottle components referenced by sprays
+    const componentIds = new Set();
+    for (const p of Object.values(productById)) {
+      if (p.oilProductId) componentIds.add(p.oilProductId);
+      if (p.waterProductId) componentIds.add(p.waterProductId);
+      if (p.bottleProductId) componentIds.add(p.bottleProductId);
+      if (p.parent?.oilProductId) componentIds.add(p.parent.oilProductId);
+      if (p.parent?.waterProductId) componentIds.add(p.parent.waterProductId);
+      if (p.parent?.bottleProductId) componentIds.add(p.parent.bottleProductId);
+    }
+    for (const id of Object.values(bottleIdByMl)) componentIds.add(id);
+    const missingComp = [...componentIds].filter((id) => purchaseByProduct[id] === undefined);
+    if (missingComp.length) {
+      const comps = await prisma.product.findMany({
+        where: { id: { in: missingComp } },
+        select: { id: true, purchasePrice: true },
+      });
+      for (const c of comps) {
+        purchaseByProduct[c.id] =
+          c.purchasePrice != null && c.purchasePrice >= 0 ? c.purchasePrice : null;
+      }
+    }
+
+    // Default Spray Water SKU (by name) when product has no waterProductId
+    let defaultWaterId = null;
+    {
+      const sw = await prisma.product.findFirst({
+        where: {
+          isActive: true,
+          isGroup: false,
+          name: { contains: 'Spray Water', mode: 'insensitive' },
+        },
+        select: { id: true, purchasePrice: true },
+      });
+      if (sw) {
+        defaultWaterId = sw.id;
+        if (sw.purchasePrice != null && sw.purchasePrice >= 0) {
+          purchaseByProduct[sw.id] = sw.purchasePrice;
+        }
       }
     }
 
@@ -172,7 +217,8 @@ router.post('/complete', async (req, res, next) => {
             : parent?.oilRatioPercent ?? p.oilRatioPercent ?? 50;
         const ratio = Math.min(100, Math.max(0, Number(ratioRaw)));
         const oilId = parent?.oilProductId || p.oilProductId || null;
-        const waterId = parent?.waterProductId || p.waterProductId || null;
+        let waterId = parent?.waterProductId || p.waterProductId || null;
+        if (!waterId && defaultWaterId) waterId = defaultWaterId;
         let bottleId = p.bottleProductId || parent?.bottleProductId || null;
         const includeBottle = item.sprayIncludeBottle !== false; // default true
 
@@ -180,15 +226,16 @@ router.post('/complete', async (req, res, next) => {
           bottleId = bottleIdByMl[bottleMl];
         }
 
-        if (bottleMl && oilId) {
-          // Per unit recipe; multiplied by line quantity at stock time
+        // Build recipe whenever we have a bottle size (oil source = linked oil or the spray product itself)
+        if (bottleMl) {
+          const oilSourceId = oilId || item.productId;
           const oilPer = (bottleMl * ratio) / 100;
           const waterPer = bottleMl - oilPer;
           sprayBottleMl = bottleMl;
           sprayOilMl = Math.round(oilPer * 1000) / 1000;
           sprayLiquidMl = Math.round(waterPer * 1000) / 1000;
           recipe = {
-            oilProductId: oilId,
+            oilProductId: oilSourceId,
             waterProductId: waterId,
             bottleProductId: includeBottle ? bottleId : null,
             oilMlPerUnit: sprayOilMl,
@@ -203,10 +250,38 @@ router.post('/complete', async (req, res, next) => {
         }
       }
 
-      const purchasePricePaise =
-        item.productId && purchaseByProduct[item.productId] != null
-          ? purchaseByProduct[item.productId]
-          : null;
+      // Unit cost in paise (report uses quantity × purchasePricePaise)
+      // PER_ML / FIXED: product purchase rate
+      // SPRAY: oil ml × oil cost + water ml × water cost + bottle cost (if included)
+      let purchasePricePaise = null;
+      if (recipe && (recipe.oilProductId || recipe.waterProductId || recipe.bottleProductId)) {
+        let unitCost = 0;
+        let any = false;
+        if (recipe.oilProductId && recipe.oilMlPerUnit > 0) {
+          const rate = purchaseByProduct[recipe.oilProductId];
+          if (rate != null) {
+            unitCost += recipe.oilMlPerUnit * rate;
+            any = true;
+          }
+        }
+        if (recipe.waterProductId && recipe.waterMlPerUnit > 0) {
+          const rate = purchaseByProduct[recipe.waterProductId];
+          if (rate != null) {
+            unitCost += recipe.waterMlPerUnit * rate;
+            any = true;
+          }
+        }
+        if (recipe.bottleProductId && recipe.bottleUnitsPerUnit > 0) {
+          const rate = purchaseByProduct[recipe.bottleProductId];
+          if (rate != null) {
+            unitCost += recipe.bottleUnitsPerUnit * rate;
+            any = true;
+          }
+        }
+        purchasePricePaise = any ? Math.round(unitCost) : null;
+      } else if (item.productId && purchaseByProduct[item.productId] != null) {
+        purchasePricePaise = purchaseByProduct[item.productId];
+      }
 
       subtotal += lineTotal;
       return {

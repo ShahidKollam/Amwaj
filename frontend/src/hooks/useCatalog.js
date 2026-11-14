@@ -36,8 +36,11 @@ export function useProducts() {
   return useQuery({
     queryKey: queryKeys.products,
     queryFn: fetchProducts,
-    staleTime: 1000 * 60 * 30,
+    // Keep fresh for spray rates after product edits (was 30m — caused stale bottle prices)
+    staleTime: 0,
     gcTime: 1000 * 60 * 60 * 24 * 7,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -79,6 +82,7 @@ export function useCreateProduct() {
       });
       const all = asArray(qc.getQueryData(queryKeys.products));
       await cacheProducts(all).catch(console.error);
+      await qc.invalidateQueries({ queryKey: queryKeys.products });
     },
   });
 }
@@ -94,6 +98,7 @@ export function useUpdateProduct() {
       });
       const all = asArray(qc.getQueryData(queryKeys.products));
       await cacheProducts(all).catch(console.error);
+      await qc.invalidateQueries({ queryKey: queryKeys.products });
     },
   });
 }

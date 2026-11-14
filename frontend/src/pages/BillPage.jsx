@@ -109,6 +109,14 @@ export default function BillPage() {
         productsQuery.isFetched,
     ])
 
+    // While size sheet open, keep the spray product rates in sync with latest catalog
+    useEffect(() => {
+        if (!sizePickProduct?.id) return
+        const list = Array.isArray(productsQuery.data) ? productsQuery.data : []
+        const fresh = list.find((p) => p.id === sizePickProduct.id)
+        if (fresh) setSizePickProduct(fresh)
+    }, [productsQuery.data, sizePickProduct?.id])
+
     // Restore unfinished bill from IndexedDB once
     useEffect(() => {
         const unsub = useCartStore.subscribe(() => {})
@@ -240,7 +248,10 @@ export default function BillPage() {
         if (!product || product.isGroup) return
         // Flat spray: pick bottle size first (same card grid, not full-width expand)
         if (product.productType === 'SPRAY' && !product.bottleSizeMl) {
-            setSizePickProduct(product)
+            // Always refetch catalog so edited oil/water/bottle prices apply
+            Promise.resolve(productsQuery.refetch?.())
+                .catch(() => {})
+                .finally(() => setSizePickProduct(product))
             return
         }
 

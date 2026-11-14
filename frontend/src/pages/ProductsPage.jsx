@@ -97,9 +97,11 @@ export default function ProductsPage() {
         async (list) => {
             const all = asArray(list)
             const active = all.filter((x) => x?.isActive !== false)
+            // Push fresh list into Query + IDB so Bill spray size prices update immediately
             qc.setQueryData(queryKeys.products, active)
-            // Full list in IDB so Products page hydrates offline too
             await cacheProducts(all).catch(console.error)
+            await qc.invalidateQueries({ queryKey: queryKeys.products })
+            await qc.invalidateQueries({ queryKey: queryKeys.categories })
         },
         [qc]
     )

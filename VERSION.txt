@@ -1,8 +1,7 @@
-Amwaj POS v1.7.9 (20261113)
+Amwaj POS v1.7.13 (20261114)
 
-- Oud: mirror checkbox still hidden (Attar + Spray only)
-- Spray bill price formula:
-  oil ml × oil rate + water ml × water rate + bottle rate
-  (default 50% oil / 50% water; editable on bill)
+- Reports: Item retail summary (name, category, qty, sell rate, purchase rate, sales, cost, profit)
+- Grand totals + expand/collapse; horizontal scroll on mobile
+- Excel (CSV) and PDF downloads include full item retail table
 
-No DB migration for this formula change.
+No DB migration.

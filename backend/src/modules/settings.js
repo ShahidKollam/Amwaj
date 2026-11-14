@@ -70,7 +70,21 @@ router.get('/reports/sales', requireOwner, async (req, res, next) => {
       where,
       include: {
         payments: true,
-        items: true,
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                productType: true,
+                unit: true,
+                unitPrice: true,
+                purchasePrice: true,
+                category: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
         customer: { select: { id: true, name: true, mobile: true } },
       },
     });
@@ -152,6 +166,83 @@ router.get('/reports/sales', requireOwner, async (req, res, next) => {
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 10);
 
+    // Full item-wise retail summary (all lines in range)
+    const retailMap = {};
+    invoices.forEach((inv) => {
+      inv.items.forEach((it) => {
+        const key =
+          it.productId ||
+          `${it.productName}|${it.productType || ''}|${it.unit || ''}`;
+        if (!retailMap[key]) {
+          const cat =
+            it.product?.category?.name ||
+            (it.productType === 'SPRAY'
+              ? 'Spray'
+              : it.productType === 'PER_ML'
+                ? 'Per ml'
+                : it.productType === 'FIXED'
+                  ? 'Fixed'
+                  : '—');
+          retailMap[key] = {
+            key,
+            name: it.productName,
+            category: cat,
+            productType: it.productType || it.product?.productType || null,
+            unit: it.unit || it.product?.unit || '',
+            qty: 0,
+            revenue: 0,
+            cost: 0,
+            costKnown: false,
+            sellRateSum: 0, // weighted by qty for average sell rate
+            purchaseRateSum: 0,
+            purchaseRateQty: 0,
+          };
+        }
+        const row = retailMap[key];
+        const q = Number(it.quantity) || 0;
+        row.qty += q;
+        row.revenue += it.lineTotalPaise || 0;
+        row.sellRateSum += (Number(it.unitPricePaise) || 0) * q;
+        if (it.purchasePricePaise != null) {
+          row.costKnown = true;
+          row.cost += Math.round(q * it.purchasePricePaise);
+          row.purchaseRateSum += Number(it.purchasePricePaise) * q;
+          row.purchaseRateQty += q;
+        }
+      });
+    });
+
+    const itemRetail = Object.values(retailMap)
+      .map((row) => {
+        const avgSell =
+          row.qty > 0 ? Math.round(row.sellRateSum / row.qty) : null;
+        const avgPurchase =
+          row.purchaseRateQty > 0
+            ? Math.round(row.purchaseRateSum / row.purchaseRateQty)
+            : null;
+        return {
+          name: row.name,
+          category: row.category,
+          productType: row.productType,
+          unit: row.unit,
+          qty: Math.round(row.qty * 1000) / 1000,
+          sellRatePaise: avgSell,
+          purchaseRatePaise: avgPurchase,
+          salesPaise: row.revenue,
+          costPaise: row.costKnown ? row.cost : null,
+          profitPaise: row.costKnown ? row.revenue - row.cost : null,
+        };
+      })
+      .sort((a, b) => b.salesPaise - a.salesPaise);
+
+    const retailSales = itemRetail.reduce((s, r) => s + r.salesPaise, 0);
+    const retailCostKnown = itemRetail.some((r) => r.costPaise != null);
+    const retailCost = retailCostKnown
+      ? itemRetail.reduce((s, r) => s + (r.costPaise || 0), 0)
+      : null;
+    const retailProfit =
+      retailCost != null ? retailSales - retailCost : null;
+
     res.json({
       totalSalesPaise: totalSales,
       billCount,
@@ -162,6 +253,12 @@ router.get('/reports/sales', requireOwner, async (req, res, next) => {
       costKnown,
       topItems,
       topCustomers,
+      itemRetail,
+      itemRetailTotals: {
+        salesPaise: retailSales,
+        costPaise: retailCost,
+        profitPaise: retailProfit,
+      },
     });
   } catch (err) {
     next(err);
